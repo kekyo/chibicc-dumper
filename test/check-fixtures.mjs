@@ -8,6 +8,7 @@ import {fileURLToPath} from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, "..");
+const resultsRoot = process.env.TEST_RESULTS_DIR;
 
 const fail = (message) => {
   throw new Error(message);
@@ -15,11 +16,18 @@ const fail = (message) => {
 
 if (!process.argv[2])
   fail("usage: check-fixtures.mjs <compiler>");
+if (!resultsRoot)
+  fail("TEST_RESULTS_DIR is required");
 
 const compiler = path.resolve(process.argv[2]);
 
 const runDump = (mode, relpath) => {
   const args = [mode];
+  const modeName = mode === "--dump-ast" ? "ast" : "tokens";
+  const outputPath = path.join(resultsRoot, "fixtures", modeName, `${relpath}.json`);
+
+  fs.mkdirSync(path.dirname(outputPath), {recursive: true});
+  args.push("-o", outputPath);
 
   if (relpath.startsWith("test/"))
     args.push("-Iinclude", "-Itest");
@@ -37,7 +45,7 @@ const runDump = (mode, relpath) => {
   if (proc.status !== 0)
     fail(`${relpath}: compiler failed with status ${proc.status}\n${proc.stderr}`);
 
-  return JSON.parse(proc.stdout);
+  return JSON.parse(fs.readFileSync(outputPath, "utf8"));
 };
 
 function *walkNode(node) {

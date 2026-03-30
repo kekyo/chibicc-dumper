@@ -8,6 +8,7 @@ import {fileURLToPath} from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, "..");
+const resultsRoot = process.env.TEST_RESULTS_DIR;
 
 const fail = (message) => {
   throw new Error(message);
@@ -15,11 +16,16 @@ const fail = (message) => {
 
 if (!process.argv[2])
   fail("usage: self-parse.mjs <compiler>");
+if (!resultsRoot)
+  fail("TEST_RESULTS_DIR is required");
 
 const compiler = path.resolve(process.argv[2]);
 
 const runAst = (relpath) => {
-  const args = ["--dump-ast"];
+  const outputPath = path.join(resultsRoot, "self-parse", `${relpath}.json`);
+  const args = ["--dump-ast", "-o", outputPath];
+
+  fs.mkdirSync(path.dirname(outputPath), {recursive: true});
 
   if (relpath.startsWith("test/"))
     args.push("-Iinclude", "-Itest");
@@ -37,7 +43,7 @@ const runAst = (relpath) => {
   if (proc.status !== 0)
     fail(`${relpath}: compiler failed with status ${proc.status}\n${proc.stderr}`);
 
-  const data = JSON.parse(proc.stdout);
+  const data = JSON.parse(fs.readFileSync(outputPath, "utf8"));
   if (!("ast" in data) || !("types" in data))
     fail(`${relpath}: invalid AST dump shape`);
 };
