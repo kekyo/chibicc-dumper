@@ -24,7 +24,7 @@
   "scripts": {
     "build": "vite build",
     "test": "npm run build && vitest run",
-    "pack": "npm run build && screw-up pack --pack-destination ./artifacts/"
+    "pack": "npm run build && screw-up pack --no-wds --pack-destination ./artifacts/"
   },
   "devDependencies": {
     "@types/node": ">=20.0.0",

@@ -96,7 +96,7 @@ printf '%s\n' "$help_output" | grep -F -- '--release <list>' >/dev/null 2>&1 || 
 printf '%s\n' "$help_output" | grep -F -- '--arch <list>' >/dev/null 2>&1 || fail 'Missing --arch option in help output'
 printf '%s\n' "$help_output" | grep -F -- '--jobs <count>' >/dev/null 2>&1 || fail 'Missing --jobs option in help output'
 
-expected_default_version=$(printf '%s\n' '{version}' | screw-up format | tr -d '\r')
+expected_default_version=$(printf '%s\n' '{version}' | screw-up format --no-wds | tr -d '\r')
 actual_default_version=$(./build_pack.sh --print-version)
 [ "$actual_default_version" = "$expected_default_version" ] || fail "Unexpected default version: $actual_default_version"
 parallel_version=$(./build_pack.sh --jobs 1 --print-version)

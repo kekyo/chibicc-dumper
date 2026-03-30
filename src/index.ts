@@ -69,7 +69,8 @@ interface WasiExitError extends Error {
 }
 
 /**
- * @brief Virtual file contents passed into the embedded chibicc instance.
+ * Virtual file contents passed into the embedded chibicc instance.
+ *
  * @property content UTF-8 source text to expose at the virtual path.
  * @property mtimeUnixSeconds Timestamp used by `__TIMESTAMP__`.
  */
@@ -79,12 +80,13 @@ export interface ChibiccDumperFile {
 }
 
 /**
- * @brief Supported value shapes for virtual files.
+ * Supported value shapes for virtual files.
  */
 export type ChibiccDumperFileSource = string | ChibiccDumperFile;
 
 /**
- * @brief Host callbacks for virtual include and warning handling.
+ * Host callbacks for virtual include and warning handling.
+ *
  * @property readFile Synchronous callback used when a file is not found in `files`.
  * @property getFileTimestamp Optional timestamp provider for files returned as raw strings.
  * @property emitWarning Optional warning sink for non-fatal diagnostics.
@@ -97,7 +99,8 @@ export interface ChibiccDumperHost {
 }
 
 /**
- * @brief Options for one embedded chibicc-dumper execution.
+ * Options for one embedded chibicc-dumper execution.
+ *
  * @property inputPath Virtual path of the primary translation unit.
  * @property source Source text of the primary translation unit.
  * @property files Additional virtual files keyed by path.
@@ -118,7 +121,8 @@ export interface ChibiccDumperRunOptions {
 }
 
 /**
- * @brief Embedded runtime metadata.
+ * Embedded runtime metadata.
+ *
  * @property targetName emsdk-env target name used to build the raw WASM binary.
  * @property compilerPath Virtual executable path used inside the WASM instance.
  * @property builtinIncludeRoot Builtin include directory exposed to chibicc.
@@ -134,7 +138,8 @@ export interface ChibiccDumperBuildInfo {
 }
 
 /**
- * @brief Structured execution error returned by the embedded runtime.
+ * Structured execution error returned by the embedded runtime.
+ *
  * @property diagnostic Fatal diagnostic or trapped stderr text.
  * @property exitCode Exit code when the WASM instance terminated via WASI.
  */
@@ -144,7 +149,7 @@ export interface ChibiccDumperRunError extends Error {
 }
 
 /**
- * @brief Build metadata for the embedded runtime.
+ * Build metadata for the embedded runtime.
  */
 export const buildInfo: ChibiccDumperBuildInfo = {
   targetName: 'chibiccDumper',
@@ -694,7 +699,8 @@ const runEmbeddedCompiler = async (
 };
 
 /**
- * @brief Runs the embedded WASM dumper and returns raw JSON text.
+ * Runs the embedded WASM dumper and returns raw JSON text.
+ *
  * @param options One-shot execution options.
  * @returns JSON text produced by chibicc-dumper.
  */
@@ -703,7 +709,8 @@ export const dumpJson = async (
 ): Promise<string> => await runEmbeddedCompiler(normalizeOptions(options));
 
 /**
- * @brief Runs the embedded WASM dumper and parses the returned JSON.
+ * Runs the embedded WASM dumper and parses the returned JSON.
+ *
  * @param options One-shot execution options.
  * @returns Parsed JSON payload.
  */

@@ -110,7 +110,7 @@ min_int() {
 
 detect_version() {
 	require_command screw-up
-	detected_version=$(printf '%s\n' '{version}' | screw-up format | tr -d '\r')
+	detected_version=$(printf '%s\n' '{version}' | screw-up format --no-wds | tr -d '\r')
 	[ -n "$detected_version" ] || fail 'screw-up did not return a version'
 	printf '%s\n' "$detected_version"
 }
