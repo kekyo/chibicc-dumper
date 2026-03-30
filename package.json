@@ -29,6 +29,7 @@
     "test": "npm run build && vitest run",
     "pack": "npm run build && screw-up pack --no-wds --pack-destination ./artifacts/"
   },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": ">=20.0.0",
     "debug": ">=4.4.0",
