@@ -1,6 +1,114 @@
 # chibicc-dumper
 
-A JSON dumper tool derived from chibicc that can output tokens and ASTs.
+A JSON dumper tool derived from chibicc that can output C language tokens and ASTs.
+
+---
+
+## What is this?
+
+For developers implementing FFI bridges, the implementation process is monotonous yet requires significant effort to fine-tune.
+Implementing this part forces developers to choose between 3 approaches:
+
+- "Outputting metadata from the target language system and using it to generate C source code for the glue,"
+- Or "Parsing the C source code in some crude way and generating the glue code from that."
+- Alternatively, they might give up on both and resort to the even more tedious task of outputting both from "Something abstract like IDL."
+
+While it is impossible to fully automate all of this work, what if we could easily obtain token sequences or AST information from the C source code?
+It might be possible to automatically generate bridge code from such information.
+This means we can treat the C source code as a primary source of metadata—something we had previously given up on.
+
+And this tool is designed to make that a reality.
+It is a compact tool created by removing the code generator from the chibicc source code and modifying it to output this information as JSON.
+It dumps the output of the tokenizer and parser as JSON.
+
+For example, given this minimal translation unit (`sample.c`):
+
+```c
+int x;
+```
+
+Running `chibicc-dumper --dump-tokens --dump-ast sample.c` produces:
+
+```json
+{
+  "types": [
+    {
+      "id": 1,
+      "kind": "TY_INT",
+      "size": 4,
+      "align": 4,
+      "isUnsigned": false,
+      "isAtomic": false,
+      "originTypeId": null,
+      "name": "x",
+      "nameToken": {
+        "file": "sample.c",
+        "line": 1,
+        "lexeme": "x"
+      }
+    }
+  ],
+  "tokens": [
+    {
+      "kind": "TK_IDENT",
+      "lexeme": "int",
+      "file": "sample.c",
+      "line": 1,
+      "atBol": true,
+      "hasSpace": false
+    },
+    {
+      "kind": "TK_IDENT",
+      "lexeme": "x",
+      "file": "sample.c",
+      "line": 1,
+      "atBol": false,
+      "hasSpace": true
+    },
+    {
+      "kind": "TK_PUNCT",
+      "lexeme": ";",
+      "file": "sample.c",
+      "line": 1,
+      "atBol": false,
+      "hasSpace": false
+    },
+    {
+      "kind": "TK_EOF",
+      "lexeme": "",
+      "file": "sample.c",
+      "line": 2,
+      "atBol": true,
+      "hasSpace": false
+    }
+  ],
+  "ast": {
+    "kind": "program",
+    "globals": [
+      {
+        "name": "x",
+        "typeId": 1,
+        "align": 4,
+        "isLocal": false,
+        "isFunction": false,
+        "isDefinition": true,
+        "isStatic": false,
+        "isTentative": true,
+        "isTls": false
+      }
+    ]
+  }
+}
+```
+
+It might also be useful simply as an aid to learning chibicc, helping you analyze what kinds of token sequences and ASTs are generated.
+
+### Clang can generate an AST
+
+However, it has been [officially stated that this output is not stable.](https://clang.llvm.org/doxygen/JSONNodeDumper_8h_source.html)
+On the other hand, chibicc is sufficiently stable, and neither its tokens nor its AST are likely to change.
+
+---
 
 ## Usage
 
@@ -38,19 +146,19 @@ front-end analysis.
 Dump raw tokens to standard output:
 
 ```sh
-./chibicc-dumper --dump-tokens sample.c
+chibicc-dumper --dump-tokens sample.c
 ```
 
 Dump the parsed AST to a file:
 
 ```sh
-./chibicc-dumper --dump-ast -o sample.ast.json sample.c
+chibicc-dumper --dump-ast -o sample.ast.json sample.c
 ```
 
 Dump both tokens and AST in one JSON document:
 
 ```sh
-./chibicc-dumper --dump-tokens --dump-ast -o sample.full.json sample.c
+chibicc-dumper --dump-tokens --dump-ast -o sample.full.json sample.c
 ```
 
 ### JSON structure
@@ -150,6 +258,90 @@ AST output contains normalized type references through fields such as
   }
 }
 ```
+
+### Token variation
+
+|Token|Details|
+|:----|:----|
+|`TK_IDENT`|Identifier token emitted by the tokenizer.|
+|`TK_PUNCT`|Punctuation or operator token such as `(`, `)`, `+`, or `->`.|
+|`TK_KEYWORD`|Reserved language keyword after keyword classification.|
+|`TK_STR`|String literal token with decoded string bytes and a string type.|
+|`TK_NUM`|Numeric token after semantic number parsing.|
+|`TK_PP_NUM`|Preprocessor-number token before final numeric interpretation.|
+|`TK_EOF`|End-of-file sentinel token appended to every token stream.|
+
+### AST node variation
+
+|Type|Details|
+|:----|:----|
+|`TY_VOID`|The `void` type.|
+|`TY_BOOL`|The `_Bool` type.|
+|`TY_CHAR`|The `char` type.|
+|`TY_SHORT`|The `short` type.|
+|`TY_INT`|The `int` type.|
+|`TY_LONG`|The `long` type.|
+|`TY_FLOAT`|The `float` type.|
+|`TY_DOUBLE`|The `double` type.|
+|`TY_LDOUBLE`|The `long double` type.|
+|`TY_ENUM`|An enum type.|
+|`TY_PTR`|A pointer type with `baseTypeId` pointing to the pointee type.|
+|`TY_FUNC`|A function type with `returnTypeId` and `paramTypeIds`.|
+|`TY_ARRAY`|A fixed-size array type with `baseTypeId` and `arrayLen`.|
+|`TY_VLA`|A variable-length array type.|
+|`TY_STRUCT`|A struct type, including member layout metadata.|
+|`TY_UNION`|A union type, including member layout metadata.|
+
+|Node|Details|
+|:----|:----|
+|`ND_NULL_EXPR`|A no-op expression placeholder.|
+|`ND_ADD`|Addition expression.|
+|`ND_SUB`|Subtraction expression.|
+|`ND_MUL`|Multiplication expression.|
+|`ND_DIV`|Division expression.|
+|`ND_NEG`|Unary minus expression.|
+|`ND_MOD`|Remainder expression.|
+|`ND_BITAND`|Bitwise AND expression.|
+|`ND_BITOR`|Bitwise OR expression.|
+|`ND_BITXOR`|Bitwise XOR expression.|
+|`ND_SHL`|Left-shift expression.|
+|`ND_SHR`|Right-shift expression.|
+|`ND_EQ`|Equality comparison expression.|
+|`ND_NE`|Inequality comparison expression.|
+|`ND_LT`|Less-than comparison expression.|
+|`ND_LE`|Less-than-or-equal comparison expression.|
+|`ND_ASSIGN`|Assignment expression.|
+|`ND_COND`|Ternary conditional (`?:`) expression.|
+|`ND_COMMA`|Comma operator expression.|
+|`ND_MEMBER`|Struct or union member access.|
+|`ND_ADDR`|Address-of (`&`) expression.|
+|`ND_DEREF`|Pointer dereference (`*`) expression.|
+|`ND_NOT`|Logical NOT expression.|
+|`ND_BITNOT`|Bitwise NOT expression.|
+|`ND_LOGAND`|Logical AND expression with short-circuit semantics.|
+|`ND_LOGOR`|Logical OR expression with short-circuit semantics.|
+|`ND_RETURN`|Return statement.|
+|`ND_IF`|`if` / `else` statement.|
+|`ND_FOR`|`for`-style loop node used for normalized loop forms.|
+|`ND_DO`|`do ... while` loop.|
+|`ND_SWITCH`|`switch` statement.|
+|`ND_CASE`|`case` or `default` label inside a switch.|
+|`ND_BLOCK`|Compound statement containing a `body` list.|
+|`ND_GOTO`|Direct `goto` statement.|
+|`ND_GOTO_EXPR`|Computed goto expression.|
+|`ND_LABEL`|Labeled statement.|
+|`ND_LABEL_VAL`|GNU label-address expression such as `&&label`.|
+|`ND_FUNCALL`|Function call expression.|
+|`ND_EXPR_STMT`|Expression statement.|
+|`ND_STMT_EXPR`|GNU statement-expression (`({ ... })`).|
+|`ND_VAR`|Variable reference expression.|
+|`ND_VLA_PTR`|Internal node that references the storage backing a VLA.|
+|`ND_NUM`|Numeric literal expression.|
+|`ND_CAST`|Cast expression.|
+|`ND_MEMZERO`|Internal zero-fill helper inserted by initialization lowering.|
+|`ND_ASM`|GNU inline assembly statement node.|
+|`ND_CAS`|Atomic compare-and-swap helper node.|
+|`ND_EXCH`|Atomic exchange helper node.|
 
 ## License
 
