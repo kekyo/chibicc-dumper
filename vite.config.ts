@@ -1,6 +1,7 @@
-import { resolve } from 'path';
+import { readdirSync, readFileSync, statSync } from 'fs';
+import { posix, relative, resolve, sep } from 'path';
 import { fileURLToPath } from 'url';
-import { defineConfig } from 'vite';
+import { Plugin, defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
 import emsdkEnv from 'emsdk-env/vite';
 import prettierMax from 'prettier-max';
@@ -8,12 +9,71 @@ import screwUp from 'screw-up';
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url));
 const source = (path: string) => resolve(rootDir, path);
+const embeddedAssetsVirtualId = 'virtual:chibicc-dumper-assets';
+const embeddedAssetsResolvedVirtualId = `\0${embeddedAssetsVirtualId}`;
+const embeddedBuiltinIncludeRoot = '/__chibicc__/include';
+
+interface EmbeddedBuiltinFile {
+  readonly content: string;
+  readonly mtimeUnixSeconds: number;
+}
+
+const walkFiles = (directory: string): string[] =>
+  readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      return walkFiles(entryPath);
+    }
+    if (entry.isFile()) {
+      return [entryPath];
+    }
+    return [];
+  });
+
+const createEmbeddedAssetsPlugin = (): Plugin => ({
+  name: 'embedded-chibicc-dumper-assets',
+  resolveId: (id) =>
+    id === embeddedAssetsVirtualId ? embeddedAssetsResolvedVirtualId : null,
+  load: (id) => {
+    if (id !== embeddedAssetsResolvedVirtualId) {
+      return null;
+    }
+
+    const wasmPath = source('src/wasm/chibicc-dumper.wasm');
+    const includeDirectory = source('include');
+    const builtinFiles = Object.fromEntries(
+      walkFiles(includeDirectory).map((filePath) => {
+        const relativePath = relative(includeDirectory, filePath)
+          .split(sep)
+          .join(posix.sep);
+        const virtualPath = posix.join(
+          embeddedBuiltinIncludeRoot,
+          relativePath
+        );
+        const stats = statSync(filePath);
+        const file: EmbeddedBuiltinFile = {
+          content: readFileSync(filePath, 'utf8'),
+          mtimeUnixSeconds: Math.floor(stats.mtimeMs / 1000),
+        };
+        return [virtualPath, file];
+      })
+    );
+
+    return [
+      `export const wasmBase64 = ${JSON.stringify(
+        readFileSync(wasmPath).toString('base64')
+      )};`,
+      `export const builtinFiles = ${JSON.stringify(builtinFiles)};`,
+    ].join('\n');
+  },
+});
 
 export default defineConfig({
   plugins: [
     prettierMax({
       typescript: 'tsconfig.tests.json',
     }),
+    createEmbeddedAssetsPlugin(),
     emsdkEnv({
       srcDir: '.',
       common: {
