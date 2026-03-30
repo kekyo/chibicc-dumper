@@ -120,9 +120,15 @@ You can install it on your system using the [pre-built packages](https://github.
 - Debian trixie, bookworm: amd64, i686, arm64, armv7l (32-bit), and riscv64
 - Ubuntu 24.04, 22.04: amd64 and arm64
 
-Or, build the tool with `make`:
+Or, you can use the `chibicc-dumper` NPM library package for TypeScript/JavaScript using WASM:
 
-```sh
+```bash
+npm install chibicc-dumper
+```
+
+Alternatively, build the tool with `make`:
+
+```bash
 make
 ```
 
@@ -130,7 +136,7 @@ The executable is generated as `./chibicc-dumper`.
 
 ## Usage
 
-### Command line
+### CLI (native binary)
 
 ```text
 chibicc-dumper [--dump-tokens] [--dump-ast] [ -E ] [ -M | -MD ] [ -o <path> ] <file>
@@ -171,7 +177,86 @@ Dump both tokens and AST in one JSON document:
 chibicc-dumper --dump-tokens --dump-ast -o sample.full.json sample.c
 ```
 
-### JSON structure
+### TypeScript / JavaScript NPM package
+
+The packaged API embeds the WASM binary into the generated JavaScript bundle,
+so it does not need to fetch an external `.wasm` file at runtime. Each API call
+creates a fresh WASM instance, runs `chibicc-dumper`, and disposes that
+instance immediately after collecting the result.
+
+Use `dumpJson()` when you want the raw JSON text, or `dump()` when you want the
+parsed JavaScript object.
+
+```ts
+import { dump, dumpJson } from 'chibicc-dumper';
+
+const json = await dumpJson({
+  inputPath: 'main.c',
+  source: 'int main(void) { return 0; }\n',
+});
+
+const result = await dump({
+  inputPath: 'main.c',
+  source: 'int main(void) { return 0; }\n',
+});
+
+console.log(json);
+console.log(result.ast.kind);
+```
+
+Builtin headers bundled with `chibicc` are available automatically, so standard
+includes such as `#include <stddef.h>` work without extra setup.
+
+```ts
+import { dump } from 'chibicc-dumper';
+
+const result = await dump({
+  inputPath: 'main.c',
+  source: '#include <stddef.h>\nsize_t value;\n',
+});
+
+console.log(result.tokens[0].kind);
+```
+
+Project-specific files can be provided through the `files` option or through
+synchronous host callbacks. Virtual paths are normalized under `/workspace`, so
+`#include "foo.h"` from `main.c` resolves to `/workspace/foo.h`.
+
+```ts
+import { dump } from 'chibicc-dumper';
+
+const result = await dump({
+  inputPath: 'main.c',
+  source: '#include "foo.h"\nint main(void) { return VALUE; }\n',
+  host: {
+    readFile: (path) => {
+      if (path === '/workspace/foo.h') {
+        return '#define VALUE 7\n';
+      }
+      return undefined;
+    },
+  },
+});
+
+console.log(result.ast.globals[0].body.body[0].lhs.val);
+```
+
+The main options are:
+
+- `inputPath`: virtual path of the main translation unit.
+- `source`: contents of the main translation unit.
+- `files`: additional virtual files keyed by path.
+- `includePaths`: extra virtual include roots.
+- `dumpTokens`: include token data in the JSON output.
+- `dumpAst`: include AST data in the JSON output.
+- `host.readFile`: synchronously provide file contents for `#include`
+  resolution.
+- `host.getFileTimestamp`: override file timestamps used by the preprocessor.
+- `host.emitWarning`: receive non-fatal diagnostics from the runtime bridge.
+
+---
+
+## JSON structure
 
 The output is always a single JSON object. The top-level shape is:
 

@@ -128,7 +128,7 @@ export default defineConfig({
   build: {
     lib: {
       entry: source('src/index.ts'),
-      name: 'chibicc-dumper-wasm',
+      name: 'chibicc-dumper',
       formats: ['es', 'cjs'],
       fileName: (format) => `index.${format === 'es' ? 'mjs' : 'cjs'}`,
     },

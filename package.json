@@ -1,7 +1,7 @@
 {
-  "name": "chibicc-dumper-wasm",
+  "name": "chibicc-dumper",
   "version": "0.0.0",
-  "description": "WASM-backed chibicc-dumper API",
+  "description": "A JSON dumper library derived from chibicc that can output C language tokens and ASTs",
   "author": "Kouji Matsui (@kekyo@mi.kekyo.net)",
   "license": "MIT",
   "type": "module",
@@ -29,7 +29,7 @@
   "devDependencies": {
     "@types/node": ">=20.0.0",
     "debug": ">=4.4.0",
-    "emsdk-env": "file:../emsdk-env",
+    "emsdk-env": ">=0.10.0",
     "prettier-max": ">=1.14.0",
     "screw-up": ">=1.26.0",
     "typescript": ">=5.0.0",
