@@ -9,7 +9,9 @@ results_dir="${TEST_RESULTS_DIR:?TEST_RESULTS_DIR is required}/json-dump"
 mkdir -p "$results_dir"
 
 cat > "$tmp/simple.c" <<'EOF'
+// sample main
 int main(void) {
+  /* answer */
   return 42;
 }
 EOF

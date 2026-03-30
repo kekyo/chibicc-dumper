@@ -168,6 +168,33 @@ const requireTokenKind = (data, relpath, kind) => {
   if (!found) fail(`${relpath}: missing token kind ${kind}`);
 };
 
+const requireHeaderComment = (holder, relpath, label, text) => {
+  if (!holder) fail(`${relpath}: missing holder for ${label}`);
+  const comments = holder.headerComments ?? [];
+  if (comments.length !== 1)
+    fail(`${relpath}: expected exactly one header comment for ${label}`);
+  if (comments[0].text !== text)
+    fail(
+      `${relpath}: unexpected header comment for ${label}: ${JSON.stringify(
+        comments[0].text
+      )}`
+    );
+};
+
+const requireStructMemberHeaderComment = (data, relpath, structKind, memberName, text) => {
+  const ty = data.types.find(
+    (candidate) =>
+      candidate.kind === structKind &&
+      (candidate.members ?? []).some((member) => member.name === memberName)
+  );
+
+  if (!ty)
+    fail(`${relpath}: missing ${structKind} containing member ${memberName}`);
+
+  const member = ty.members.find((candidate) => candidate.name === memberName);
+  requireHeaderComment(member, relpath, `${structKind}.${memberName}`, text);
+};
+
 const astCases = {
   'test/arith.c': (data) => {
     requireAssertCount(data, 'test/arith.c');
@@ -222,6 +249,35 @@ const astCases = {
     requireAssertCount(data, 'test/vla.c');
     requireVlaSupport(data, 'test/vla.c');
   },
+  'test/comments.c': (data) => {
+    const globals = new Map(data.ast.globals.map((obj) => [obj.name, obj]));
+    requireHeaderComment(
+      globals.get('global_value'),
+      'test/comments.c',
+      'global_value',
+      ' global value '
+    );
+    requireHeaderComment(
+      globals.get('documented_function'),
+      'test/comments.c',
+      'documented_function',
+      ' function comment line 1\n function comment line 2'
+    );
+    requireStructMemberHeaderComment(
+      data,
+      'test/comments.c',
+      'TY_STRUCT',
+      'first',
+      ' first member'
+    );
+    requireStructMemberHeaderComment(
+      data,
+      'test/comments.c',
+      'TY_STRUCT',
+      'second',
+      ' second member '
+    );
+  },
 };
 
 const tokenCases = {
@@ -235,6 +291,29 @@ const tokenCases = {
   },
   'test/literal.c': (data) => {
     requireToken(data, 'test/literal.c', '0b101111', 'TK_PP_NUM');
+  },
+  'test/comments.c': (data) => {
+    requireTokenKind(data, 'test/comments.c', 'TK_COMMENT');
+
+    const lineComment = data.tokens.find(
+      (tok) => tok.kind === 'TK_COMMENT' && tok.commentStyle === 'line'
+    );
+    if (!lineComment)
+      fail('test/comments.c: missing line comment token');
+    if (lineComment.text !== ' ignored by blank line')
+      fail(
+        `test/comments.c: unexpected line comment text: ${JSON.stringify(
+          lineComment.text
+        )}`
+      );
+
+    const blockComment = data.tokens.find(
+      (tok) => tok.kind === 'TK_COMMENT' && tok.commentStyle === 'block'
+    );
+    if (!blockComment)
+      fail('test/comments.c: missing block comment token');
+    if (blockComment.endLine !== blockComment.line)
+      fail('test/comments.c: expected single-line block comment span');
   },
 };
 

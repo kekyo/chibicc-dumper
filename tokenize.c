@@ -112,6 +112,20 @@ static Token *new_token(TokenKind kind, char *start, char *end) {
   return tok;
 }
 
+static Token *new_comment_token(char *start, char *end, bool is_block_comment) {
+  bool comment_at_bol = at_bol;
+  bool comment_has_space = has_space;
+
+  Token *tok = new_token(TK_COMMENT, start, end);
+  tok->is_block_comment = is_block_comment;
+
+  at_bol = comment_at_bol;
+  has_space = true;
+  tok->at_bol = comment_at_bol;
+  tok->has_space = comment_has_space;
+  return tok;
+}
+
 static bool startswith(char *p, char *q) {
   return strncmp(p, q, strlen(q)) == 0;
 }
@@ -470,6 +484,12 @@ static void add_line_numbers(Token *tok) {
   do {
     if (p == tok->loc) {
       tok->line_no = n;
+      tok->end_line_no = n;
+      if (tok->kind == TK_COMMENT) {
+        for (int i = 0; i < tok->len; i++)
+          if (tok->loc[i] == '\n')
+            tok->end_line_no++;
+      }
       tok = tok->next;
     }
     if (*p == '\n')
@@ -499,22 +519,23 @@ Token *tokenize(File *file) {
   has_space = false;
 
   while (*p) {
-    // Skip line comments.
+    // Tokenize line comments.
     if (startswith(p, "//")) {
-      p += 2;
-      while (*p != '\n')
-        p++;
-      has_space = true;
+      char *q = p + 2;
+      while (*q != '\n')
+        q++;
+      cur = cur->next = new_comment_token(p, q, false);
+      p = q;
       continue;
     }
 
-    // Skip block comments.
+    // Tokenize block comments.
     if (startswith(p, "/*")) {
       char *q = strstr(p + 2, "*/");
       if (!q)
         error_at(p, "unclosed block comment");
+      cur = cur->next = new_comment_token(p, q + 2, true);
       p = q + 2;
-      has_space = true;
       continue;
     }
 

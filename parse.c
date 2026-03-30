@@ -153,8 +153,9 @@ static Node *unary(Token **rest, Token *tok);
 static Node *primary(Token **rest, Token *tok);
 static Token *parse_typedef(Token *tok, Type *basety);
 static bool is_function(Token *tok);
-static Token *function(Token *tok, Type *basety, VarAttr *attr);
-static Token *global_variable(Token *tok, Type *basety, VarAttr *attr);
+static Token *function(Token *tok, Type *basety, VarAttr *attr, Token *decl_tok);
+static Token *global_variable(Token *tok, Type *basety, VarAttr *attr,
+                              Token *decl_tok);
 
 static int align_down(int n, int align) {
   return align_to(n - align + 1, align);
@@ -1769,6 +1770,7 @@ static Node *compound_stmt(Token **rest, Token *tok) {
 
   while (!equal(tok, "}")) {
     if (is_typename(tok) && !equal(tok->next, ":")) {
+      Token *decl_tok = tok;
       VarAttr attr = {};
       Type *basety = declspec(&tok, tok, &attr);
 
@@ -1778,12 +1780,12 @@ static Node *compound_stmt(Token **rest, Token *tok) {
       }
 
       if (is_function(tok)) {
-        tok = function(tok, basety, &attr);
+        tok = function(tok, basety, &attr, decl_tok);
         continue;
       }
 
       if (attr.is_extern) {
-        tok = global_variable(tok, basety, &attr);
+        tok = global_variable(tok, basety, &attr, decl_tok);
         continue;
       }
 
@@ -2547,6 +2549,7 @@ static void struct_members(Token **rest, Token *tok, Type *ty) {
   int idx = 0;
 
   while (!equal(tok, "}")) {
+    Token *decl_tok = tok;
     VarAttr attr = {};
     Type *basety = declspec(&tok, tok, &attr);
     bool first = true;
@@ -2556,6 +2559,7 @@ static void struct_members(Token **rest, Token *tok, Type *ty) {
         consume(&tok, tok, ";")) {
       Member *mem = calloc(1, sizeof(Member));
       mem->ty = basety;
+      mem->tok = decl_tok;
       mem->idx = idx++;
       mem->align = attr.align ? attr.align : mem->ty->align;
       cur = cur->next = mem;
@@ -2570,6 +2574,7 @@ static void struct_members(Token **rest, Token *tok, Type *ty) {
 
       Member *mem = calloc(1, sizeof(Member));
       mem->ty = declarator(&tok, tok, basety);
+      mem->tok = decl_tok;
       mem->name = mem->ty->name;
       mem->idx = idx++;
       mem->align = attr.align ? attr.align : mem->ty->align;
@@ -3196,7 +3201,7 @@ static void mark_live(Obj *var) {
   }
 }
 
-static Token *function(Token *tok, Type *basety, VarAttr *attr) {
+static Token *function(Token *tok, Type *basety, VarAttr *attr, Token *decl_tok) {
   Type *ty = declarator(&tok, tok, basety);
   if (!ty->name)
     error_tok(ty->name_pos, "function name omitted");
@@ -3220,6 +3225,8 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     fn->is_inline = attr->is_inline;
   }
 
+  if (equal(tok, "{") || !fn->tok)
+    fn->tok = decl_tok;
   fn->is_root = !(fn->is_static && fn->is_inline);
 
   if (consume(&tok, tok, ";"))
@@ -3261,7 +3268,8 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
   return tok;
 }
 
-static Token *global_variable(Token *tok, Type *basety, VarAttr *attr) {
+static Token *global_variable(Token *tok, Type *basety, VarAttr *attr,
+                              Token *decl_tok) {
   bool first = true;
 
   while (!consume(&tok, tok, ";")) {
@@ -3274,6 +3282,7 @@ static Token *global_variable(Token *tok, Type *basety, VarAttr *attr) {
       error_tok(ty->name_pos, "variable name omitted");
 
     Obj *var = new_gvar(get_ident(ty->name), ty);
+    var->tok = decl_tok;
     var->is_definition = !attr->is_extern;
     var->is_static = attr->is_static;
     var->is_tls = attr->is_tls;
@@ -3339,6 +3348,7 @@ Obj *parse(Token *tok) {
   globals = NULL;
 
   while (tok->kind != TK_EOF) {
+    Token *decl_tok = tok;
     VarAttr attr = {};
     Type *basety = declspec(&tok, tok, &attr);
 
@@ -3350,12 +3360,12 @@ Obj *parse(Token *tok) {
 
     // Function
     if (is_function(tok)) {
-      tok = function(tok, basety, &attr);
+      tok = function(tok, basety, &attr, decl_tok);
       continue;
     }
 
     // Global variable
-    tok = global_variable(tok, basety, &attr);
+    tok = global_variable(tok, basety, &attr, decl_tok);
   }
 
   for (Obj *var = globals; var; var = var->next)

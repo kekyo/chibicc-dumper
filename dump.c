@@ -22,6 +22,7 @@ typedef struct {
   TypeArray types;
   ObjArray objs;
   NodeArray nodes;
+  Token *raw_tok;
 } DumpContext;
 
 static int register_type(DumpContext *ctx, Type *ty);
@@ -146,6 +147,12 @@ static void json_bytes(FILE *out, char *buf, int len) {
   fputc(']', out);
 }
 
+static Token *source_token(Token *tok) {
+  while (tok && tok->origin)
+    tok = tok->origin;
+  return tok;
+}
+
 static char *token_file_name(Token *tok) {
   if (!tok)
     return NULL;
@@ -177,6 +184,170 @@ static void dump_token_ref(FILE *out, Token *tok) {
   fputc('}', out);
 }
 
+static char *comment_style_name(Token *tok) {
+  return tok->is_block_comment ? "block" : "line";
+}
+
+static void comment_text_span(Token *tok, char **text, int *len) {
+  if (!tok || tok->kind != TK_COMMENT) {
+    *text = NULL;
+    *len = 0;
+    return;
+  }
+
+  int prefix_len = 2;
+  int suffix_len = tok->is_block_comment ? 2 : 0;
+  *text = tok->loc + prefix_len;
+  *len = tok->len - prefix_len - suffix_len;
+}
+
+static char *join_comment_group_text(Token *start, Token *end) {
+  int len = 0;
+  int count = 0;
+
+  for (Token *tok = start; tok; tok = tok->next) {
+    char *text;
+    int text_len;
+    comment_text_span(tok, &text, &text_len);
+    len += text_len;
+    if (count++ > 0)
+      len++;
+    if (tok == end)
+      break;
+  }
+
+  char *buf = calloc(1, len + 1);
+  char *p = buf;
+  count = 0;
+
+  for (Token *tok = start; tok; tok = tok->next) {
+    char *text;
+    int text_len;
+    comment_text_span(tok, &text, &text_len);
+    if (count++ > 0)
+      *p++ = '\n';
+    memcpy(p, text, text_len);
+    p += text_len;
+    if (tok == end)
+      break;
+  }
+
+  *p = '\0';
+  return buf;
+}
+
+static Token *find_raw_token(DumpContext *ctx, Token *tok) {
+  Token *src = source_token(tok);
+  if (!src || !ctx->raw_tok)
+    return src;
+
+  for (Token *raw = ctx->raw_tok; raw; raw = raw->next) {
+    if (raw == src)
+      return raw;
+    if (raw->file == src->file && raw->loc == src->loc && raw->len == src->len)
+      return raw;
+  }
+  return NULL;
+}
+
+static bool find_header_comment_group(DumpContext *ctx, Token *decl_tok,
+                                      Token **start, Token **end) {
+  *start = NULL;
+  *end = NULL;
+
+  Token *raw_decl_tok = find_raw_token(ctx, decl_tok);
+  if (!raw_decl_tok)
+    return false;
+
+  Token *group_start = NULL;
+  Token *group_end = NULL;
+
+  for (Token *tok = ctx->raw_tok; tok && tok != raw_decl_tok; tok = tok->next) {
+    if (tok->kind == TK_COMMENT) {
+      if (!group_start) {
+        group_start = group_end = tok;
+        continue;
+      }
+
+      if (!group_start->is_block_comment && !tok->is_block_comment &&
+          group_end->file == tok->file &&
+          group_end->end_line_no + 1 == tok->line_no) {
+        group_end = tok;
+        continue;
+      }
+
+      group_start = group_end = tok;
+      continue;
+    }
+
+    group_start = NULL;
+    group_end = NULL;
+  }
+
+  if (!group_start || !group_end)
+    return false;
+  if (!group_start->at_bol)
+    return false;
+  if (group_start->file != raw_decl_tok->file || group_end->file != raw_decl_tok->file)
+    return false;
+  if (group_end->end_line_no + 1 < raw_decl_tok->line_no)
+    return false;
+
+  *start = group_start;
+  *end = group_end;
+  return true;
+}
+
+static void dump_token_ref_list_json(FILE *out, Token *start, Token *end) {
+  fputc('[', out);
+  bool first = true;
+
+  for (Token *tok = start; tok; tok = tok->next) {
+    json_sep(out, &first);
+    dump_token_ref(out, tok);
+    if (tok == end)
+      break;
+  }
+
+  fputc(']', out);
+}
+
+static void dump_header_comments_json(FILE *out, DumpContext *ctx, Token *decl_tok) {
+  Token *start;
+  Token *end;
+  if (!find_header_comment_group(ctx, decl_tok, &start, &end)) {
+    fputs("[]", out);
+    return;
+  }
+
+  char *text = join_comment_group_text(start, end);
+
+  fputc('[', out);
+  bool first = true;
+  fputc('{', out);
+
+  json_key(out, &first, "style");
+  json_string(out, comment_style_name(start));
+
+  json_key(out, &first, "file");
+  json_string(out, token_file_name(start));
+
+  json_key(out, &first, "line");
+  fprintf(out, "%d", start->line_no);
+
+  json_key(out, &first, "endLine");
+  fprintf(out, "%d", end->end_line_no);
+
+  json_key(out, &first, "text");
+  json_string(out, text);
+
+  json_key(out, &first, "tokens");
+  dump_token_ref_list_json(out, start, end);
+
+  fputc('}', out);
+  fputc(']', out);
+}
+
 static char *token_kind_name(TokenKind kind) {
   switch (kind) {
   case TK_IDENT:
@@ -191,6 +362,8 @@ static char *token_kind_name(TokenKind kind) {
     return "TK_NUM";
   case TK_PP_NUM:
     return "TK_PP_NUM";
+  case TK_COMMENT:
+    return "TK_COMMENT";
   case TK_EOF:
     return "TK_EOF";
   }
@@ -500,6 +673,11 @@ static void dump_member_json(FILE *out, DumpContext *ctx, Member *mem) {
   json_key(out, &first, "typeId");
   dump_type_ref(out, ctx, mem->ty);
 
+  if (mem->tok) {
+    json_key(out, &first, "headerComments");
+    dump_header_comments_json(out, ctx, mem->tok);
+  }
+
   json_key(out, &first, "offset");
   fprintf(out, "%d", mem->offset);
 
@@ -696,6 +874,11 @@ static void dump_obj_json(FILE *out, DumpContext *ctx, Obj *obj, bool shallow) {
   if (obj->tok) {
     json_key(out, &first, "token");
     dump_token_ref(out, obj->tok);
+  }
+
+  if (!shallow && obj->tok) {
+    json_key(out, &first, "headerComments");
+    dump_header_comments_json(out, ctx, obj->tok);
   }
 
   if (!shallow) {
@@ -942,6 +1125,21 @@ static void dump_token_json(FILE *out, DumpContext *ctx, Token *tok) {
   json_key(out, &first, "hasSpace");
   json_bool(out, tok->has_space);
 
+  if (tok->kind == TK_COMMENT) {
+    char *text;
+    int text_len;
+    comment_text_span(tok, &text, &text_len);
+
+    json_key(out, &first, "commentStyle");
+    json_string(out, comment_style_name(tok));
+
+    json_key(out, &first, "endLine");
+    fprintf(out, "%d", tok->end_line_no);
+
+    json_key(out, &first, "text");
+    json_string_len(out, text, text_len);
+  }
+
   if (tok->ty) {
     json_key(out, &first, "typeId");
     dump_type_ref(out, ctx, tok->ty);
@@ -982,6 +1180,7 @@ static void dump_tokens_json(FILE *out, DumpContext *ctx, Token *tok) {
 void dump_translation_unit_json(Token *tok, Obj *prog, bool dump_tokens,
                                 bool dump_ast, FILE *out) {
   DumpContext ctx = {};
+  ctx.raw_tok = tok;
 
   if (dump_tokens)
     gather_tokens(&ctx, tok);

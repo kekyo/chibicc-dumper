@@ -288,6 +288,7 @@ console.log(result.ast.globals[0].body.body[0].lhs.val);
 `types` は常に存在します。`tokens` は `--dump-tokens` を指定した場合のみ、`ast` は `--dump-ast` を指定した場合のみ存在します。
 
 トークン要素には、トークン種別、ソース上の字句、ソースファイル、行番号、行頭かどうか、空白情報といった字句情報が含まれます。
+コメントトークン (`TK_COMMENT`) には、追加で `commentStyle`、`endLine`、コメント本文の `text` も含まれます。
 例:
 
 ```json
@@ -316,6 +317,7 @@ console.log(result.ast.globals[0].body.body[0].lhs.val);
 
 AST 出力には、`typeId`、`baseTypeId`、`returnTypeId` などのフィールドを通じた正規化済み型参照が含まれます。
 関数定義は `ast.globals` 配下に現れ、文や式のノードは各関数の `body` の下に入れ子で格納されます。
+先行するコメントブロックが検出された場合、global/function や struct/union member には `headerComments` も付与されます。
 例:
 
 ```json
@@ -375,6 +377,7 @@ AST 出力には、`typeId`、`baseTypeId`、`returnTypeId` などのフィー�
 | `TK_STR`      | デコード済み文字列バイト列と文字列型を持つ文字列リテラルトークン。   |
 | `TK_NUM`      | 意味解析後の数値トークン。                                           |
 | `TK_PP_NUM`   | 最終的な数値解釈前のプリプロセッサ数値トークン。                     |
+| `TK_COMMENT`  | 行コメント (`//`) またはブロックコメント (`/* ... */`) トークン。    |
 | `TK_EOF`      | すべてのトークン列の末尾に追加される EOF センチネルトークン。        |
 
 ### AST ノードの種類

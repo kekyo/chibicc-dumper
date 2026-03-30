@@ -460,6 +460,29 @@ static Token *append_tokens(Token *tok1, Token *tok2) {
   return tok1;
 }
 
+static Token *copy_token_without_comments(Token *tok) {
+  Token *copy = calloc(1, sizeof(Token));
+  *copy = *tok;
+  copy->next = NULL;
+  if (!copy->origin)
+    copy->origin = tok;
+  return copy;
+}
+
+static Token *strip_comment_tokens(Token *tok) {
+  Token head = {};
+  Token *cur = &head;
+
+  for (; tok; tok = tok->next) {
+    if (tok->kind == TK_COMMENT)
+      continue;
+    cur = cur->next = copy_token_without_comments(tok);
+    if (tok->kind == TK_EOF)
+      break;
+  }
+  return head.next;
+}
+
 static Token *build_input_tokens(void) {
   Token *tok = NULL;
 
@@ -485,11 +508,13 @@ static void cc1(void) {
   Token *raw_tok = NULL;
   Token *pp_tok = NULL;
 
-  if (opt_dump_tokens)
+  if (opt_dump_tokens || opt_dump_ast)
     raw_tok = build_input_tokens();
 
   if (opt_E || opt_M || opt_MD || opt_dump_ast) {
-    pp_tok = build_input_tokens();
+    if (!raw_tok)
+      raw_tok = build_input_tokens();
+    pp_tok = strip_comment_tokens(raw_tok);
     pp_tok = preprocess(pp_tok);
   }
 

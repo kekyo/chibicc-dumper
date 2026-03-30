@@ -300,6 +300,8 @@ requested, and `ast` is present only when `--dump-ast` is requested.
 
 Token entries contain lexical information such as token kind, source lexeme,
 source file, line number, beginning-of-line state, and whitespace information.
+Comment tokens (`TK_COMMENT`) additionally include `commentStyle`, `endLine`,
+and stripped comment `text`.
 For example:
 
 ```json
@@ -329,7 +331,9 @@ For example:
 AST output contains normalized type references through fields such as
 `typeId`, `baseTypeId`, and `returnTypeId`. Function definitions appear under
 `ast.globals`, and statement/expression nodes are nested under each function's
-`body`. For example:
+`body`. Declaration-like entries such as globals/functions and struct or union
+members may also include `headerComments` when a leading comment block is
+detected. For example:
 
 ```json
 {
@@ -388,6 +392,7 @@ AST output contains normalized type references through fields such as
 | `TK_STR`     | String literal token with decoded string bytes and a string type. |
 | `TK_NUM`     | Numeric token after semantic number parsing.                      |
 | `TK_PP_NUM`  | Preprocessor-number token before final numeric interpretation.    |
+| `TK_COMMENT` | Line (`//`) or block (`/* ... */`) comment token.                |
 | `TK_EOF`     | End-of-file sentinel token appended to every token stream.        |
 
 ### AST node variation

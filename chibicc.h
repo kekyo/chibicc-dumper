@@ -58,6 +58,7 @@ typedef enum {
   TK_STR,     // String literals
   TK_NUM,     // Numeric literals
   TK_PP_NUM,  // Preprocessing numbers
+  TK_COMMENT, // Comments
   TK_EOF,     // End-of-file markers
 } TokenKind;
 
@@ -86,9 +87,11 @@ struct Token {
   File *file;       // Source location
   char *filename;   // Filename
   int line_no;      // Line number
+  int end_line_no;  // Inclusive end line number
   int line_delta;   // Line number
   bool at_bol;      // True if this token is at beginning of line
   bool has_space;   // True if this token follows a space character
+  bool is_block_comment; // Used if kind is TK_COMMENT
   Hideset *hideset; // For macro expansion
   Token *origin;    // If this is expanded from a macro, the original token
 };

@@ -22,8 +22,12 @@ if (mode === 'tokens') {
   expect('types' in data, 'missing types');
   expect('tokens' in data, 'missing tokens');
   expect(!('ast' in data), 'unexpected ast');
-  expect(data.tokens[0]?.kind === 'TK_IDENT', 'unexpected first token kind');
-  expect(data.tokens[0]?.lexeme === 'int', 'unexpected first token lexeme');
+  expect(data.tokens[0]?.kind === 'TK_COMMENT', 'unexpected first token kind');
+  expect(data.tokens[0]?.text === ' sample main', 'unexpected first comment text');
+  expect(
+    data.tokens.some((tok) => tok.kind === 'TK_COMMENT' && tok.commentStyle === 'block'),
+    'missing block comment token'
+  );
   expect(data.tokens.at(-1)?.kind === 'TK_EOF', 'unexpected last token kind');
   process.exit(0);
 }
@@ -42,6 +46,10 @@ if (mode === 'ast') {
   const mainFn = mainFns[0];
   expect(mainFn.body?.kind === 'ND_BLOCK', 'main body must be ND_BLOCK');
   expect(
+    mainFn.headerComments?.[0]?.text === ' sample main',
+    'main function must contain a header comment'
+  );
+  expect(
     (mainFn.body?.body ?? []).some((node) => node.kind === 'ND_RETURN'),
     'main body must contain ND_RETURN'
   );
@@ -53,6 +61,10 @@ if (mode === 'both') {
   expect('tokens' in data, 'missing tokens');
   expect('ast' in data, 'missing ast');
   expect((data.tokens ?? []).length >= 2, 'expected at least two tokens');
+  expect(
+    data.ast.globals.some((obj) => obj.headerComments?.length === 1),
+    'expected at least one AST header comment'
+  );
   expect(data.ast.kind === 'program', 'unexpected ast root kind');
   process.exit(0);
 }
