@@ -29,3 +29,8 @@ char *format(char *fmt, ...) {
   fclose(out);
   return buf;
 }
+
+// Round up `n` to the nearest multiple of `align`.
+int align_to(int n, int align) {
+  return (n + align - 1) / align * align;
+}

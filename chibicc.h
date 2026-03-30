@@ -403,12 +403,6 @@ Type *vla_of(Type *base, Node *expr);
 Type *enum_type(void);
 Type *struct_type(void);
 void add_type(Node *node);
-
-//
-// codegen.c
-//
-
-void codegen(Obj *prog, FILE *out);
 int align_to(int n, int align);
 
 //
@@ -459,6 +453,4 @@ void hashmap_test(void);
 bool file_exists(char *path);
 
 extern StringArray include_paths;
-extern bool opt_fpic;
-extern bool opt_fcommon;
 extern char *base_file;
