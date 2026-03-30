@@ -1,4 +1,4 @@
-CFLAGS=-std=c11 -g -Wall -Wno-switch
+CFLAGS=-std=c11 -O2 -g -Wall -Wno-switch
 TEST_RESULTS_STAMP:=$(shell date +%Y%m%d_%H%M%S_%3N)
 TEST_RESULTS_DIR:=$(CURDIR)/test_results/$(TEST_RESULTS_STAMP)
 BINARY=chibicc-dumper

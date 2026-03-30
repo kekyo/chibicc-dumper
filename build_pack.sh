@@ -8,7 +8,7 @@ PACKAGE_NAME=chibicc-dumper
 PACKAGE_DESCRIPTION="A JSON dumper tool derived from chibicc that can output C language tokens and ASTs."
 DEFAULT_MAINTAINER="chibicc-dumper packager <packager@localhost>"
 PROJECT_HOMEPAGE="https://github.com/kekyo/chibicc-cpp"
-DEFAULT_PARALLEL_JOB_CAP=8
+DEFAULT_PARALLEL_JOB_CAP=14
 
 LINUX_MATRIX=$(cat <<'EOF'
 debian bookworm x86_64 linux/amd64
@@ -32,7 +32,6 @@ print_usage() {
 Usage: ./build_pack.sh [options]
 
 Options:
-  --version <version>  Package version. Defaults to a screw-up-derived version.
   --distro <list>      Comma-separated distro filter for deb builds.
   --release <list>     Comma-separated release filter for deb builds.
   --arch <list>        Comma-separated architecture filter.
@@ -49,6 +48,13 @@ fail() {
 
 require_command() {
 	command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
+}
+
+build_npm_package() {
+	printf '%s\n' "[npm] npm install"
+	npm install
+	printf '%s\n' "[npm] npm run pack"
+	npm run pack
 }
 
 validate_positive_integer() {
@@ -291,7 +297,6 @@ cleanup() {
 	rm -rf "$TMP_ROOT"
 }
 
-VERSION=''
 DISTRO_FILTER=''
 RELEASE_FILTER=''
 ARCH_FILTER=''
@@ -300,11 +305,6 @@ PRINT_VERSION='false'
 
 while [ "$#" -gt 0 ]; do
 	case $1 in
-		--version)
-			[ "$#" -ge 2 ] || fail 'Missing value for --version'
-			VERSION=$2
-			shift 2
-			;;
 		--distro)
 			[ "$#" -ge 2 ] || fail 'Missing value for --distro'
 			DISTRO_FILTER=$2
@@ -339,9 +339,7 @@ while [ "$#" -gt 0 ]; do
 	esac
 done
 
-if [ -z "$VERSION" ]; then
-	VERSION=$(detect_version)
-fi
+VERSION=$(detect_version)
 validate_version "$VERSION"
 
 if [ -n "$PARALLEL_JOBS" ]; then
@@ -356,6 +354,7 @@ if [ "$PRINT_VERSION" = 'true' ]; then
 fi
 
 require_command dpkg-deb
+require_command npm
 
 CONTAINER_ENGINE_BIN=$(choose_container_engine)
 MAKE_JOBS=$PARALLEL_JOBS
@@ -371,5 +370,6 @@ JOB_FAILURE=0
 mkdir -p "$ARTIFACT_ROOT/deb" "$TMP_ROOT"
 trap cleanup EXIT HUP INT TERM
 
+build_npm_package
 schedule_deb_builds
 wait_for_all_jobs

@@ -70,6 +70,10 @@ source_root=$CHIBICC_DUMPER_SOURCE_ROOT
 run_root=$CHIBICC_DUMPER_RUN_ROOT
 work_dir=$CHIBICC_DUMPER_WORK_DIR
 meta_dir=$CHIBICC_DUMPER_META_DIR
+job_dir=$(dirname "$work_dir")
+release_dir=$(dirname "$job_dir")
+distro_dir=$(dirname "$release_dir")
+deb_root=$(dirname "$distro_dir")
 package_name=$CHIBICC_DUMPER_PACKAGE_NAME
 build_root=/tmp/chibicc-dumper-build
 pack_root=/tmp/chibicc-dumper-pack
@@ -79,12 +83,25 @@ include_dir="$binary_dir/include"
 doc_dir="$pkg_root/usr/share/doc/$package_name"
 control_dir="$pkg_root/DEBIAN"
 
+restore_host_ownership() {
+	chown "$CHIBICC_DUMPER_HOST_UID:$CHIBICC_DUMPER_HOST_GID" \
+		"$deb_root" \
+		"$distro_dir" \
+		"$release_dir" \
+		"$job_dir" >/dev/null 2>&1 || true
+	[ -e "$job_dir" ] && chown -R "$CHIBICC_DUMPER_HOST_UID:$CHIBICC_DUMPER_HOST_GID" "$job_dir" || true
+}
+
+trap restore_host_ownership EXIT
+
 rm -rf "$build_root" "$pack_root" "$work_dir" "$meta_dir"
 mkdir -p "$build_root" "$control_dir" "$binary_dir" "$include_dir" "$doc_dir" "$pkg_root/usr/bin" "$work_dir" "$meta_dir"
 
 tar -C "$source_root" \
 	--exclude='./.git' \
 	--exclude='./artifacts' \
+	--exclude='./dist' \
+	--exclude='./node_modules' \
 	--exclude='./test_results' \
 	-cf - . | tar -C "$build_root" -xf -
 
@@ -136,5 +153,3 @@ deb_arch=$(dpkg-architecture -qDEB_HOST_ARCH)
 mkdir -p "$work_dir/debian"
 cp -a "$pack_root/debian/." "$work_dir/debian/"
 printf '%s\n' "$deb_arch" >"$meta_dir/deb_arch"
-
-chown -R "$CHIBICC_DUMPER_HOST_UID:$CHIBICC_DUMPER_HOST_GID" "$run_root"

@@ -46,6 +46,11 @@ deb_artifact_path() {
 	printf '%s\n' "$ARTIFACT_ROOT/deb/${PACKAGE_NAME}-${version}-${distro}-${release}-${deb_arch}.deb"
 }
 
+npm_artifact_path() {
+	version=$1
+	printf '%s\n' "$ARTIFACT_ROOT/${PACKAGE_NAME}-${version}.tgz"
+}
+
 expected_elf_class() {
 	case $1 in
 		x86_64 | arm64 | riscv64)
@@ -106,11 +111,17 @@ if ./build_pack.sh --version "$expected_default_version" --distro fedora >/dev/n
 fi
 
 VERSION=${CHIBICC_DUMPER_PACK_TEST_VERSION:-$expected_default_version}
-PACK_BUILD_JOBS=${CHIBICC_DUMPER_PACK_TEST_JOBS:-8}
-rm -rf "$ARTIFACT_ROOT"
+PACK_BUILD_JOBS=${CHIBICC_DUMPER_PACK_TEST_JOBS:-14}
+rm -rf "$ARTIFACT_ROOT" "$PROJECT_ROOT/dist"
 ./build_pack.sh \
 	--version "$VERSION" \
 	--jobs "$PACK_BUILD_JOBS"
+
+npm_package_version=$expected_default_version
+npm_package_path=$(npm_artifact_path "$npm_package_version")
+assert_file "$npm_package_path"
+npm_count=$(find "$ARTIFACT_ROOT" -maxdepth 1 -type f -name '*.tgz' | wc -l | tr -d ' ')
+[ "$npm_count" = '1' ] || fail "Unexpected npm artifact count: $npm_count"
 
 deb_count=$(find "$ARTIFACT_ROOT/deb" -type f -name '*.deb' | wc -l | tr -d ' ')
 [ "$deb_count" = '13' ] || fail "Unexpected deb artifact count: $deb_count"
@@ -138,6 +149,27 @@ EOF
 
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT INT TERM HUP
+
+mkdir -p "$tmp_dir/npm"
+tar -xzf "$npm_package_path" -C "$tmp_dir/npm"
+
+assert_file "$tmp_dir/npm/package/package.json"
+assert_file "$tmp_dir/npm/package/LICENSE"
+assert_file "$tmp_dir/npm/package/README.md"
+assert_file "$tmp_dir/npm/package/dist/index.mjs"
+assert_file "$tmp_dir/npm/package/dist/index.cjs"
+assert_file "$tmp_dir/npm/package/dist/index.d.ts"
+
+for header_path in "$PROJECT_ROOT"/include/*.h; do
+	header_name=$(basename "$header_path")
+	assert_file "$tmp_dir/npm/package/include/$header_name"
+done
+
+[ "$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).name" "$tmp_dir/npm/package/package.json")" = "$PACKAGE_NAME" ] ||
+	fail "Unexpected package name in npm artifact: $tmp_dir/npm/package/package.json"
+[ "$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).version" "$tmp_dir/npm/package/package.json")" = "$npm_package_version" ] ||
+	fail "Unexpected package version in npm artifact: $tmp_dir/npm/package/package.json"
+assert_contains "$tmp_dir/npm/package/dist/index.mjs" "version: $npm_package_version"
 
 native_package_path=$(deb_artifact_path "$VERSION" debian bookworm amd64)
 package_path=$native_package_path
