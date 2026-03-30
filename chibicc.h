@@ -412,6 +412,13 @@ void codegen(Obj *prog, FILE *out);
 int align_to(int n, int align);
 
 //
+// dump.c
+//
+
+void dump_translation_unit_json(Token *tok, Obj *prog, bool dump_tokens,
+                                bool dump_ast, FILE *out);
+
+//
 // unicode.c
 //
 

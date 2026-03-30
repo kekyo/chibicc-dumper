@@ -18,6 +18,8 @@ static bool opt_MP;
 static bool opt_S;
 static bool opt_c;
 static bool opt_cc1;
+static bool opt_dump_tokens;
+static bool opt_dump_ast;
 static bool opt_hash_hash_hash;
 static bool opt_static;
 static bool opt_shared;
@@ -35,7 +37,7 @@ static StringArray input_paths;
 static StringArray tmpfiles;
 
 static void usage(int status) {
-  fprintf(stderr, "chibicc [ -o <path> ] <file>\n");
+  fprintf(stderr, "chibicc [--dump-tokens] [--dump-ast] [ -o <path> ] <file>\n");
   exit(status);
 }
 
@@ -129,6 +131,16 @@ static void parse_args(int argc, char **argv) {
 
     if (!strcmp(argv[i], "-cc1")) {
       opt_cc1 = true;
+      continue;
+    }
+
+    if (!strcmp(argv[i], "--dump-tokens")) {
+      opt_dump_tokens = true;
+      continue;
+    }
+
+    if (!strcmp(argv[i], "--dump-ast")) {
+      opt_dump_ast = true;
       continue;
     }
 
@@ -345,6 +357,11 @@ static void parse_args(int argc, char **argv) {
   // -E implies that the input is the C macro language.
   if (opt_E)
     opt_x = FILE_C;
+
+  if ((opt_dump_tokens || opt_dump_ast) &&
+      (opt_E || opt_M || opt_MD || opt_c || opt_S || opt_static ||
+       opt_shared || ld_extra_args.len > 0))
+    error("dump options cannot be combined with compilation or linker options");
 }
 
 static FILE *open_file(char *path) {
@@ -535,6 +552,20 @@ static void cc1(void) {
   // Tokenize and parse.
   Token *tok2 = must_tokenize_file(base_file);
   tok = append_tokens(tok, tok2);
+
+  if (opt_dump_tokens || opt_dump_ast) {
+    Obj *prog = NULL;
+    if (opt_dump_ast) {
+      Token *pp_tok = preprocess(tok);
+      prog = parse(pp_tok);
+    }
+
+    FILE *out = open_file(output_file ? output_file : "-");
+    dump_translation_unit_json(tok, prog, opt_dump_tokens, opt_dump_ast, out);
+    fclose(out);
+    return;
+  }
+
   tok = preprocess(tok);
 
   // If -M or -MD are given, print file dependencies.
@@ -704,6 +735,17 @@ int main(int argc, char **argv) {
 
   if (opt_cc1) {
     add_default_include_paths(argv[0]);
+    cc1();
+    return 0;
+  }
+
+  if (opt_dump_tokens || opt_dump_ast) {
+    if (input_paths.len != 1)
+      error("dump options require exactly one input file");
+
+    add_default_include_paths(argv[0]);
+    base_file = input_paths.data[0];
+    output_file = opt_o;
     cc1();
     return 0;
   }
