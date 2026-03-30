@@ -8,6 +8,8 @@ extern int chibicc_host_read_file(char *path, char *buffer, int capacity)
   WASM_IMPORT("chibicc_host_read_file");
 extern int chibicc_host_get_file_timestamp(char *path)
   WASM_IMPORT("chibicc_host_get_file_timestamp");
+extern int chibicc_host_write_file(char *path, char *buffer, int length)
+  WASM_IMPORT("chibicc_host_write_file");
 extern void chibicc_host_emit_warning(char *message)
   WASM_IMPORT("chibicc_host_emit_warning");
 
@@ -41,6 +43,10 @@ static bool wasm_get_file_timestamp(char *path, time_t *result) {
   return true;
 }
 
+static bool wasm_write_file(char *path, char *buffer, size_t len) {
+  return chibicc_host_write_file(path, buffer, (int)len) != 0;
+}
+
 static char *wasm_resolve_executable_path(char *argv0) {
   return strdup(argv0);
 }
@@ -52,6 +58,7 @@ static void wasm_emit_warning(char *message) {
 static ChibiccHost wasm_host = {
   .file_exists = wasm_file_exists,
   .read_file = wasm_read_file,
+  .write_file = wasm_write_file,
   .get_file_timestamp = wasm_get_file_timestamp,
   .resolve_executable_path = wasm_resolve_executable_path,
   .emit_warning = wasm_emit_warning,

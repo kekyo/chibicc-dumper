@@ -458,6 +458,7 @@ typedef struct ChibiccErrorContext ChibiccErrorContext;
 struct ChibiccHost {
   bool (*file_exists)(char *path);
   char *(*read_file)(char *path);
+  bool (*write_file)(char *path, char *buffer, size_t len);
   bool (*get_file_timestamp)(char *path, time_t *result);
   char *(*resolve_executable_path)(char *argv0);
   void (*emit_warning)(char *message);
@@ -492,6 +493,15 @@ char *chibicc_read_file(char *path);
  * @return `true` if the path exists.
  */
 bool file_exists(char *path);
+
+/**
+ * @brief Writes an output file through the active host.
+ * @param path Destination path.
+ * @param buffer Output bytes to write.
+ * @param len Output length in bytes.
+ * @return `true` if the file was written successfully.
+ */
+bool chibicc_write_file(char *path, char *buffer, size_t len);
 
 /**
  * @brief Retrieves a file timestamp through the active host.

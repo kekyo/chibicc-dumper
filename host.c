@@ -57,6 +57,17 @@ static char *native_read_file(char *path) {
   return buf;
 }
 
+static bool native_write_file(char *path, char *buffer, size_t len) {
+  FILE *fp = fopen(path, "w");
+  if (!fp)
+    return false;
+
+  bool ok = fwrite(buffer, 1, len, fp) == len;
+  if (fclose(fp) != 0)
+    ok = false;
+  return ok;
+}
+
 static bool native_get_file_timestamp(char *path, time_t *result) {
   struct stat st;
   if (stat(path, &st) != 0)
@@ -86,6 +97,7 @@ static void native_emit_warning(char *message) {
 static ChibiccHost default_host = {
   .file_exists = native_file_exists,
   .read_file = native_read_file,
+  .write_file = native_write_file,
   .get_file_timestamp = native_get_file_timestamp,
   .resolve_executable_path = native_resolve_executable_path,
   .emit_warning = native_emit_warning,
@@ -108,6 +120,12 @@ char *chibicc_read_file(char *path) {
 
 bool file_exists(char *path) {
   return current_host->file_exists(path);
+}
+
+bool chibicc_write_file(char *path, char *buffer, size_t len) {
+  if (!current_host->write_file)
+    return false;
+  return current_host->write_file(path, buffer, len);
 }
 
 bool chibicc_get_file_timestamp(char *path, time_t *result) {

@@ -2,7 +2,12 @@
 
 A JSON dumper tool derived from chibicc that can output C language tokens and ASTs.
 
+[![Project Status: WIP – Initial development is in progress, but there has not yet been a stable, usable release suitable for the public.](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 ---
+
+[(Japanese language is here/日本語はこちら)](./README_ja.md)
 
 > Please note that this English version of the document was machine-translated and then partially edited, so it may contain inaccuracies.
 > We welcome pull requests to correct any errors in the text.
@@ -126,6 +131,13 @@ Or, you can use the `chibicc-dumper` NPM library package for TypeScript/JavaScri
 npm install chibicc-dumper
 ```
 
+The package also exposes the `chibicc-dumper` CLI command, so you can run it
+directly with `npx` or through your package manager's bin shim:
+
+```bash
+npx chibicc-dumper --dump-tokens --dump-ast sample.c
+```
+
 Alternatively, build the tool with `make`:
 
 ```bash
@@ -136,7 +148,7 @@ The executable is generated as `./chibicc-dumper`.
 
 ## Usage
 
-### CLI (native binary)
+### CLI
 
 ```text
 chibicc-dumper [--dump-tokens] [--dump-ast] [ -E ] [ -M | -MD ] [ -o <path> ] <file>
@@ -156,6 +168,12 @@ The dumper accepts a single C translation unit as input.
 Preprocessor-oriented options such as `-I`, `-idirafter`, `-include`, `-D`, `-U`,
 `-x c|none`, `-E`, and `-M*` are still supported because they are useful for
 front-end analysis.
+
+The npm package CLI uses the same command-line format:
+
+```sh
+npx chibicc-dumper --dump-ast sample.c
+```
 
 ### Examples
 

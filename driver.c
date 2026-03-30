@@ -23,6 +23,10 @@ static bool capture_stdout;
 static char *captured_stdout;
 static size_t captured_stdout_len;
 static FILE *captured_stdout_file;
+static char *captured_host_output_path;
+static char *captured_host_output;
+static size_t captured_host_output_len;
+static FILE *captured_host_output_file;
 
 static void usage(int status) {
   fprintf(stderr,
@@ -289,11 +293,24 @@ static void parse_args(int argc, char **argv) {
 static FILE *open_file(char *path) {
   if ((!path || strcmp(path, "-") == 0) && capture_stdout) {
     captured_stdout_file = open_memstream(&captured_stdout, &captured_stdout_len);
+    if (!captured_stdout_file)
+      error("cannot open output stream: %s", strerror(errno));
     return captured_stdout_file;
   }
 
   if (!path || strcmp(path, "-") == 0)
     return stdout;
+
+  if (capture_stdout) {
+    captured_host_output_path = strdup(path);
+    captured_host_output = NULL;
+    captured_host_output_len = 0;
+    captured_host_output_file =
+      open_memstream(&captured_host_output, &captured_host_output_len);
+    if (!captured_host_output_file)
+      error("cannot open output file: %s: %s", path, strerror(errno));
+    return captured_host_output_file;
+  }
 
   FILE *out = fopen(path, "w");
   if (!out)
@@ -301,13 +318,52 @@ static FILE *open_file(char *path) {
   return out;
 }
 
+static void discard_output_captures(void) {
+  if (captured_stdout_file) {
+    fclose(captured_stdout_file);
+    captured_stdout_file = NULL;
+  }
+  free(captured_stdout);
+  captured_stdout = NULL;
+  captured_stdout_len = 0;
+
+  if (captured_host_output_file) {
+    fclose(captured_host_output_file);
+    captured_host_output_file = NULL;
+  }
+  free(captured_host_output_path);
+  captured_host_output_path = NULL;
+  free(captured_host_output);
+  captured_host_output = NULL;
+  captured_host_output_len = 0;
+}
+
 static void close_file(FILE *out) {
   if (out == stdout)
     return;
 
   fclose(out);
-  if (out == captured_stdout_file)
+  if (out == captured_stdout_file) {
     captured_stdout_file = NULL;
+    return;
+  }
+
+  if (out == captured_host_output_file) {
+    char *path = captured_host_output_path;
+    char *buffer = captured_host_output ? captured_host_output : strdup("");
+    size_t len = captured_host_output ? captured_host_output_len : 0;
+
+    captured_host_output_file = NULL;
+    captured_host_output_path = NULL;
+    captured_host_output = NULL;
+    captured_host_output_len = 0;
+
+    if (!chibicc_write_file(path, buffer, len))
+      error("cannot write output file: %s", path);
+
+    free(path);
+    free(buffer);
+  }
 }
 
 static char *replace_extn(char *tmpl, char *extn) {
@@ -481,6 +537,10 @@ bool chibicc_driver_try_capture_main(int argc, char **argv, int *status,
   captured_stdout = NULL;
   captured_stdout_len = 0;
   captured_stdout_file = NULL;
+  captured_host_output_path = NULL;
+  captured_host_output = NULL;
+  captured_host_output_len = 0;
+  captured_host_output_file = NULL;
   chibicc_begin_error_capture(&ctx);
 
   if (setjmp(ctx.env) == 0) {
@@ -494,8 +554,7 @@ bool chibicc_driver_try_capture_main(int argc, char **argv, int *status,
     return true;
   }
 
-  if (captured_stdout_file)
-    close_file(captured_stdout_file);
+  discard_output_captures();
   *status = 1;
   *output = NULL;
   *error_message = ctx.message;

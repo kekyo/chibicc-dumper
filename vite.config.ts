@@ -12,6 +12,7 @@ const source = (path: string) => resolve(rootDir, path);
 const embeddedAssetsVirtualId = 'virtual:chibicc-dumper-assets';
 const embeddedAssetsResolvedVirtualId = `\0${embeddedAssetsVirtualId}`;
 const embeddedBuiltinIncludeRoot = '/__chibicc__/include';
+const cliShebang = '#!/usr/bin/env node';
 
 interface EmbeddedBuiltinFile {
   readonly content: string;
@@ -68,12 +69,24 @@ const createEmbeddedAssetsPlugin = (): Plugin => ({
   },
 });
 
+const createCliShebangPlugin = (): Plugin => ({
+  name: 'chibicc-dumper-cli-shebang',
+  renderChunk: (code, chunk) => {
+    if (!/^main\.(mjs|cjs)$/.test(chunk.fileName)) {
+      return null;
+    }
+
+    return `${cliShebang}\n${code.replace(/^#![^\n]*\n/, '')}`;
+  },
+});
+
 export default defineConfig({
   plugins: [
     prettierMax({
       typescript: 'tsconfig.tests.json',
     }),
     createEmbeddedAssetsPlugin(),
+    createCliShebangPlugin(),
     emsdkEnv({
       srcDir: '.',
       common: {
@@ -127,10 +140,13 @@ export default defineConfig({
   ],
   build: {
     lib: {
-      entry: source('src/index.ts'),
-      name: 'chibicc-dumper',
+      entry: {
+        index: source('src/index.ts'),
+        main: source('src/main.ts'),
+      },
       formats: ['es', 'cjs'],
-      fileName: (format) => `index.${format === 'es' ? 'mjs' : 'cjs'}`,
+      fileName: (format, entryName) =>
+        `${entryName}.${format === 'es' ? 'mjs' : 'cjs'}`,
     },
     target: 'es2020',
     sourcemap: true,
