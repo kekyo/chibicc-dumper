@@ -469,6 +469,359 @@ detected. For example:
 
 ---
 
+## Example: Converting JSON into TypeScript Type Expressions
+
+The emitted JSON can be used as source data for building TypeScript `type`
+expressions that mirror the shape of a C `struct`.
+This example focuses only on copying member names and member type shapes.
+It does not try to address exact memory layout compatibility, ABI concerns,
+padding, alignment, or the other details required for real FFI bindings.
+
+Start with a small C input.
+If you attach comments to struct members, and also to the declaration that uses
+the struct, you can later read those comments back as hints.
+
+```c
+struct Point {
+  /* ffi:i32 */
+  int x;
+  /* ffi:u16 */
+  unsigned short y;
+};
+
+/* ffi:type:Point */
+struct Point global_point;
+```
+
+When you dump this with `--dump-ast`, you get JSON roughly like this.
+The important points are:
+
+- The struct itself appears as a `TY_STRUCT` entry in the `types` array.
+- Member enumeration comes from `types[*].members`.
+- To find which struct to use, follow `ast.globals[*].typeId` to `types[*].id`.
+
+Rather than searching for a specific `struct` by name directly, it is often
+easier to first find a declaration that uses that type, such as a global
+variable or function parameter, and then start from its `typeId`.
+
+```json
+{
+  "types": [
+    {
+      "id": 1,
+      "kind": "TY_STRUCT",
+      "members": [
+        {
+          "name": "x",
+          "typeId": 2,
+          "headerComments": [
+            {
+              "style": "block",
+              "text": " ffi:i32 "
+            }
+          ],
+          "offset": 0,
+          "align": 4,
+          "index": 0,
+          "isBitfield": false,
+          "bitOffset": 0,
+          "bitWidth": 0
+        },
+        {
+          "name": "y",
+          "typeId": 3,
+          "headerComments": [
+            {
+              "style": "block",
+              "text": " ffi:u16 "
+            }
+          ],
+          "offset": 4,
+          "align": 2,
+          "index": 1,
+          "isBitfield": false,
+          "bitOffset": 0,
+          "bitWidth": 0
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "TY_INT",
+      "isUnsigned": false
+    },
+    {
+      "id": 3,
+      "kind": "TY_SHORT",
+      "isUnsigned": true
+    }
+  ],
+  "ast": {
+    "globals": [
+      {
+        "name": "global_point",
+        "typeId": 1,
+        "headerComments": [
+          {
+            "style": "block",
+            "text": " ffi:type:Point "
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The following minimal example reads that JSON and emits TypeScript bindings such
+as `type Point = { ... }`.
+Because `typeId` is a reference ID rather than an array index, it is safest to
+build a `Map` first.
+
+```ts
+import { dumpJson } from 'chibicc-dumper';
+
+interface DumpHeaderComment {
+  readonly text: string;
+}
+
+interface DumpMember {
+  readonly name: string | null;
+  readonly typeId: number;
+  readonly headerComments?: readonly DumpHeaderComment[];
+}
+
+interface DumpType {
+  readonly id: number;
+  readonly kind: string;
+  readonly isUnsigned?: boolean;
+  readonly baseTypeId?: number;
+  readonly members?: readonly DumpMember[];
+}
+
+interface DumpGlobal {
+  readonly name: string;
+  readonly typeId: number;
+  readonly headerComments?: readonly DumpHeaderComment[];
+}
+
+interface DumpResult {
+  readonly types: readonly DumpType[];
+  readonly ast?: {
+    readonly globals: readonly DumpGlobal[];
+  };
+}
+
+const scalarKinds = new Set([
+  'TY_CHAR',
+  'TY_SHORT',
+  'TY_INT',
+  'TY_LONG',
+  'TY_FLOAT',
+  'TY_DOUBLE',
+  'TY_LDOUBLE',
+  'TY_ENUM',
+]);
+
+const findFfiAnnotation = (
+  comments: readonly DumpHeaderComment[] | undefined
+): string | undefined =>
+  comments
+    ?.map((comment) => comment.text.trim())
+    .find((text) => text.startsWith('ffi:'));
+
+const renderStructLiteral = (
+  members: readonly DumpMember[],
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number>
+): string => {
+  const lines = members.map((member) => {
+    if (member.name === null) {
+      throw new Error('Anonymous members need custom handling.');
+    }
+
+    const annotation = findFfiAnnotation(member.headerComments);
+    const annotationLine = annotation ? `  /** ${annotation} */\n` : '';
+    return `${annotationLine}  ${member.name}: ${renderType(member.typeId, typeById, seen)};`;
+  });
+
+  return `{\n${lines.join('\n')}\n}`;
+};
+
+const renderExampleObjectLiteral = (
+  members: readonly DumpMember[],
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number>
+): string => {
+  const lines = members.map((member) => {
+    if (member.name === null) {
+      throw new Error('Anonymous members need custom handling.');
+    }
+
+    return `  ${member.name}: ${renderExampleValue(member.typeId, typeById, seen)},`;
+  });
+
+  return `{\n${lines.join('\n')}\n}`;
+};
+
+const renderType = (
+  typeId: number,
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number> = new Set()
+): string => {
+  const ty = typeById.get(typeId);
+  if (!ty) {
+    throw new Error(`Unknown typeId: ${typeId}`);
+  }
+
+  if (scalarKinds.has(ty.kind)) {
+    return 'number';
+  }
+
+  switch (ty.kind) {
+    case 'TY_BOOL':
+      return 'boolean';
+    case 'TY_PTR':
+      return 'number';
+    case 'TY_ARRAY':
+      if (ty.baseTypeId === undefined) {
+        throw new Error(`TY_ARRAY ${typeId} has no baseTypeId.`);
+      }
+      return `${renderType(ty.baseTypeId, typeById, seen)}[]`;
+    case 'TY_STRUCT':
+    case 'TY_UNION':
+      if (!ty.members) {
+        throw new Error(`${ty.kind} ${typeId} has no members.`);
+      }
+      if (seen.has(typeId)) {
+        return '{ /* recursive */ }';
+      }
+      return renderStructLiteral(ty.members, typeById, new Set([...seen, typeId]));
+    default:
+      return 'unknown';
+  }
+};
+
+const renderExampleValue = (
+  typeId: number,
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number> = new Set()
+): string => {
+  const ty = typeById.get(typeId);
+  if (!ty) {
+    throw new Error(`Unknown typeId: ${typeId}`);
+  }
+
+  if (scalarKinds.has(ty.kind)) {
+    return '0';
+  }
+
+  switch (ty.kind) {
+    case 'TY_BOOL':
+      return 'false';
+    case 'TY_PTR':
+      return '0';
+    case 'TY_ARRAY':
+      return '[]';
+    case 'TY_STRUCT':
+    case 'TY_UNION':
+      if (!ty.members) {
+        throw new Error(`${ty.kind} ${typeId} has no members.`);
+      }
+      if (seen.has(typeId)) {
+        return '{}';
+      }
+      return renderExampleObjectLiteral(
+        ty.members,
+        typeById,
+        new Set([...seen, typeId])
+      );
+    default:
+      return 'undefined as never';
+  }
+};
+
+const generatePointBindings = async (): Promise<string> => {
+  const dumpText = await dumpJson({
+    inputPath: 'point.c',
+    source: `
+struct Point {
+  /* ffi:i32 */
+  int x;
+  /* ffi:u16 */
+  unsigned short y;
+};
+
+/* ffi:type:Point */
+struct Point global_point;
+`.trimStart(),
+    dumpTokens: false,
+    dumpAst: true,
+  });
+
+  const result = JSON.parse(dumpText) as DumpResult;
+  const typeById = new Map(result.types.map((ty) => [ty.id, ty]));
+
+  const target = result.ast?.globals.find((global) => global.name === 'global_point');
+  if (!target) {
+    throw new Error('global_point not found.');
+  }
+
+  const aliasName =
+    findFfiAnnotation(target.headerComments)?.replace(/^ffi:type:/, '') ??
+    'GeneratedType';
+
+  return [
+    `type ${aliasName} = ${renderType(target.typeId, typeById)};`,
+    `const ${target.name}: ${aliasName} = ${renderExampleValue(target.typeId, typeById)};`,
+  ].join('\n\n');
+};
+
+console.log(await generatePointBindings());
+```
+
+The output looks like this:
+
+```ts
+type Point = {
+  /** ffi:i32 */
+  x: number;
+  /** ffi:u16 */
+  y: number;
+};
+
+const global_point: Point = {
+  x: 0,
+  y: 0,
+};
+```
+
+The key implementation points in this example are:
+
+- Identify the struct by starting from a declaration node such as
+  `ast.globals`, taking its `typeId`, and resolving that ID in `types`.
+- Enumerate members from the `members` array of a `TY_STRUCT` or `TY_UNION`.
+- Determine each member type by resolving `member.typeId` in `types` and
+  checking fields such as `kind`, `isUnsigned`, and `baseTypeId`.
+- If simple scalar coverage is enough, mapping `TY_INT` and `TY_SHORT` to
+  `number`, and `TY_BOOL` to `boolean`, is already useful.
+- If you also want a value-side skeleton, you can reuse the same type walk to
+  generate defaults such as `0`, `false`, `[]`, and `{ ... }`, which is enough
+  to emit `const global_point: Point = { ... }`.
+- Nested structs can be handled by recursively following `TY_STRUCT` /
+  `TY_UNION`. If you want separate named `type` aliases, add a naming rule for
+  recursive expansion.
+- Pointers appear as `TY_PTR`. If you only want to mirror JSON shape, you can
+  map them to `number` or a custom alias such as `Pointer<T>`, but real FFI use
+  needs additional design.
+- Fixed-size arrays can be converted from `TY_ARRAY` plus `baseTypeId` and
+  `arrayLen` into `T[]` or tuple-like forms.
+- Comments can be read back from `headerComments` on globals/functions and
+  struct/union members. Strings such as `ffi:type:Point` or `ffi:u16` can serve
+  as future hints for FFI conversion or other custom annotations.
+
+---
+
 ## License
 
 Under MIT.

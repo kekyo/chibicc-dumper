@@ -454,6 +454,340 @@ AST 出力には、`typeId`、`baseTypeId`、`returnTypeId` などのフィー�
 
 ---
 
+## JSON を TypeScript の型式へ変換する例
+
+出力 JSON は、C の `struct` と同じような形状の TypeScript `type` 式を組み立てる材料として使えます。
+ここで扱うのは「メンバー名とメンバー型の形状を写す」例です。
+メモリレイアウトの完全一致や ABI、実際の FFI バインディングで必要になる詰め物やアラインメントの検証までは踏み込みません。
+
+まず、対象にする C コードを小さくしておきます。
+構造体メンバーにコメントを付け、さらに構造体を参照する宣言にもコメントを付けておくと、後段でヒントとして拾えます。
+
+```c
+struct Point {
+  /* ffi:i32 */
+  int x;
+  /* ffi:u16 */
+  unsigned short y;
+};
+
+/* ffi:type:Point */
+struct Point global_point;
+```
+
+この入力を `--dump-ast` で変換すると、概ね次のような JSON が得られます。
+重要なのは次の 3 点です。
+
+- 構造体そのものは `types` 配列の `TY_STRUCT` 要素として出る
+- メンバー列挙は `types[*].members` から取れる
+- どの構造体を使うかは `ast.globals[*].typeId` から `types[*].id` を引くと辿れる
+
+特定の `struct` を名前で直接探すより、まず global 変数や関数引数など「その型を使っている宣言」を見つけて、その `typeId` を起点に辿る方が実装しやすくなります。
+
+```json
+{
+  "types": [
+    {
+      "id": 1,
+      "kind": "TY_STRUCT",
+      "members": [
+        {
+          "name": "x",
+          "typeId": 2,
+          "headerComments": [
+            {
+              "style": "block",
+              "text": " ffi:i32 "
+            }
+          ],
+          "offset": 0,
+          "align": 4,
+          "index": 0,
+          "isBitfield": false,
+          "bitOffset": 0,
+          "bitWidth": 0
+        },
+        {
+          "name": "y",
+          "typeId": 3,
+          "headerComments": [
+            {
+              "style": "block",
+              "text": " ffi:u16 "
+            }
+          ],
+          "offset": 4,
+          "align": 2,
+          "index": 1,
+          "isBitfield": false,
+          "bitOffset": 0,
+          "bitWidth": 0
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "TY_INT",
+      "isUnsigned": false
+    },
+    {
+      "id": 3,
+      "kind": "TY_SHORT",
+      "isUnsigned": true
+    }
+  ],
+  "ast": {
+    "globals": [
+      {
+        "name": "global_point",
+        "typeId": 1,
+        "headerComments": [
+          {
+            "style": "block",
+            "text": " ffi:type:Point "
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+上の JSON を読み取り、`type Point = { ... }` のような TypeScript の型式を出力する最小例は次のようになります。
+`typeId` は `types` 配列の添字ではなく参照 ID なので、最初に `Map` を作って引けるようにしておくのが安全です。
+
+```ts
+import { dumpJson } from 'chibicc-dumper';
+
+interface DumpHeaderComment {
+  readonly text: string;
+}
+
+interface DumpMember {
+  readonly name: string | null;
+  readonly typeId: number;
+  readonly headerComments?: readonly DumpHeaderComment[];
+}
+
+interface DumpType {
+  readonly id: number;
+  readonly kind: string;
+  readonly isUnsigned?: boolean;
+  readonly baseTypeId?: number;
+  readonly members?: readonly DumpMember[];
+}
+
+interface DumpGlobal {
+  readonly name: string;
+  readonly typeId: number;
+  readonly headerComments?: readonly DumpHeaderComment[];
+}
+
+interface DumpResult {
+  readonly types: readonly DumpType[];
+  readonly ast?: {
+    readonly globals: readonly DumpGlobal[];
+  };
+}
+
+const scalarKinds = new Set([
+  'TY_CHAR',
+  'TY_SHORT',
+  'TY_INT',
+  'TY_LONG',
+  'TY_FLOAT',
+  'TY_DOUBLE',
+  'TY_LDOUBLE',
+  'TY_ENUM',
+]);
+
+const findFfiAnnotation = (
+  comments: readonly DumpHeaderComment[] | undefined
+): string | undefined =>
+  comments
+    ?.map((comment) => comment.text.trim())
+    .find((text) => text.startsWith('ffi:'));
+
+const renderStructLiteral = (
+  members: readonly DumpMember[],
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number>
+): string => {
+  const lines = members.map((member) => {
+    if (member.name === null) {
+      throw new Error('Anonymous members need custom handling.');
+    }
+
+    const annotation = findFfiAnnotation(member.headerComments);
+    const annotationLine = annotation ? `  /** ${annotation} */\n` : '';
+    return `${annotationLine}  ${member.name}: ${renderType(member.typeId, typeById, seen)};`;
+  });
+
+  return `{\n${lines.join('\n')}\n}`;
+};
+
+const renderExampleObjectLiteral = (
+  members: readonly DumpMember[],
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number>
+): string => {
+  const lines = members.map((member) => {
+    if (member.name === null) {
+      throw new Error('Anonymous members need custom handling.');
+    }
+
+    return `  ${member.name}: ${renderExampleValue(member.typeId, typeById, seen)},`;
+  });
+
+  return `{\n${lines.join('\n')}\n}`;
+};
+
+const renderType = (
+  typeId: number,
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number> = new Set()
+): string => {
+  const ty = typeById.get(typeId);
+  if (!ty) {
+    throw new Error(`Unknown typeId: ${typeId}`);
+  }
+
+  if (scalarKinds.has(ty.kind)) {
+    return 'number';
+  }
+
+  switch (ty.kind) {
+    case 'TY_BOOL':
+      return 'boolean';
+    case 'TY_PTR':
+      return 'number';
+    case 'TY_ARRAY':
+      if (ty.baseTypeId === undefined) {
+        throw new Error(`TY_ARRAY ${typeId} has no baseTypeId.`);
+      }
+      return `${renderType(ty.baseTypeId, typeById, seen)}[]`;
+    case 'TY_STRUCT':
+    case 'TY_UNION':
+      if (!ty.members) {
+        throw new Error(`${ty.kind} ${typeId} has no members.`);
+      }
+      if (seen.has(typeId)) {
+        return '{ /* recursive */ }';
+      }
+      return renderStructLiteral(ty.members, typeById, new Set([...seen, typeId]));
+    default:
+      return 'unknown';
+  }
+};
+
+const renderExampleValue = (
+  typeId: number,
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number> = new Set()
+): string => {
+  const ty = typeById.get(typeId);
+  if (!ty) {
+    throw new Error(`Unknown typeId: ${typeId}`);
+  }
+
+  if (scalarKinds.has(ty.kind)) {
+    return '0';
+  }
+
+  switch (ty.kind) {
+    case 'TY_BOOL':
+      return 'false';
+    case 'TY_PTR':
+      return '0';
+    case 'TY_ARRAY':
+      return '[]';
+    case 'TY_STRUCT':
+    case 'TY_UNION':
+      if (!ty.members) {
+        throw new Error(`${ty.kind} ${typeId} has no members.`);
+      }
+      if (seen.has(typeId)) {
+        return '{}';
+      }
+      return renderExampleObjectLiteral(
+        ty.members,
+        typeById,
+        new Set([...seen, typeId])
+      );
+    default:
+      return 'undefined as never';
+  }
+};
+
+const generatePointBindings = async (): Promise<string> => {
+  const dumpText = await dumpJson({
+    inputPath: 'point.c',
+    source: `
+struct Point {
+  /* ffi:i32 */
+  int x;
+  /* ffi:u16 */
+  unsigned short y;
+};
+
+/* ffi:type:Point */
+struct Point global_point;
+`.trimStart(),
+    dumpTokens: false,
+    dumpAst: true,
+  });
+
+  const result = JSON.parse(dumpText) as DumpResult;
+  const typeById = new Map(result.types.map((ty) => [ty.id, ty]));
+
+  const target = result.ast?.globals.find((global) => global.name === 'global_point');
+  if (!target) {
+    throw new Error('global_point not found.');
+  }
+
+  const aliasName =
+    findFfiAnnotation(target.headerComments)?.replace(/^ffi:type:/, '') ??
+    'GeneratedType';
+
+  return [
+    `type ${aliasName} = ${renderType(target.typeId, typeById)};`,
+    `const ${target.name}: ${aliasName} = ${renderExampleValue(target.typeId, typeById)};`,
+  ].join('\n\n');
+};
+
+console.log(await generatePointBindings());
+```
+
+出力は次のようになります。
+
+```ts
+type Point = {
+  /** ffi:i32 */
+  x: number;
+  /** ffi:u16 */
+  y: number;
+};
+
+const global_point: Point = {
+  x: 0,
+  y: 0,
+};
+```
+
+この例で見ておくべき実装上のポイントは次のとおりです。
+
+- 構造体の特定は、まず `ast.globals` などの宣言ノードから `typeId` を取り、その ID で `types` を引く
+- 構造体のメンバー列挙は `TY_STRUCT` または `TY_UNION` の `members` 配列を読む
+- 各メンバーの型判定は `member.typeId` から `types` を引き、`kind`、`isUnsigned`、`baseTypeId` などを見る
+- 単純型だけでよければ `TY_INT` や `TY_SHORT` をまとめて `number` に落とし、`TY_BOOL` を `boolean` にするだけでも十分に使える
+- 値側のスケルトンも欲しいなら、同じ型走査を使って `0`、`false`、`[]`、`{ ... }` のような既定値を組み立てれば `const global_point: Point = { ... }` まで自動生成できる
+- ネストした構造体は `TY_STRUCT` / `TY_UNION` を再帰的に辿ればよい。別名の `type` を起こしたいなら、再帰時に別途名前付け規則を持たせる
+- ポインタは `TY_PTR` として取得できる。単に JSON の形状を写すだけなら `number` や独自の `Pointer<T>` 別名に落とせるが、実際の FFI で安全に扱うには別途設計が必要
+- 固定長配列は `TY_ARRAY` の `baseTypeId` と `arrayLen` を見て `T[]` やタプル相当に変換できる
+- コメントは global/function や struct/union member の `headerComments` から取得できる。上の例の `ffi:type:Point` や `ffi:u16` のような文字列を使えば、将来的に FFI 変換ヒントや独自アノテーションとして利用できる
+
+---
+
 ## License
 
 Under MIT.
