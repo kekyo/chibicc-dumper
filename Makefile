@@ -11,6 +11,8 @@ $(OBJS): chibicc.h
 test: chibicc
 	bash test/driver.sh ./chibicc
 	bash test/json-dump.sh ./chibicc
+	node test/check-fixtures.mjs ./chibicc
+	node test/self-parse.mjs ./chibicc
 
 test-all: test
 

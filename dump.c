@@ -7,7 +7,21 @@ typedef struct {
 } TypeArray;
 
 typedef struct {
+  Obj **data;
+  int len;
+  int cap;
+} ObjArray;
+
+typedef struct {
+  Node **data;
+  int len;
+  int cap;
+} NodeArray;
+
+typedef struct {
   TypeArray types;
+  ObjArray objs;
+  NodeArray nodes;
 } DumpContext;
 
 static int register_type(DumpContext *ctx, Type *ty);
@@ -20,6 +34,36 @@ static void typearray_push(TypeArray *arr, Type *ty) {
     arr->data = realloc(arr->data, sizeof(Type *) * arr->cap);
   }
   arr->data[arr->len++] = ty;
+}
+
+static bool objarray_contains(ObjArray *arr, Obj *obj) {
+  for (int i = 0; i < arr->len; i++)
+    if (arr->data[i] == obj)
+      return true;
+  return false;
+}
+
+static void objarray_push(ObjArray *arr, Obj *obj) {
+  if (arr->len == arr->cap) {
+    arr->cap = arr->cap ? arr->cap * 2 : 16;
+    arr->data = realloc(arr->data, sizeof(Obj *) * arr->cap);
+  }
+  arr->data[arr->len++] = obj;
+}
+
+static bool nodearray_contains(NodeArray *arr, Node *node) {
+  for (int i = 0; i < arr->len; i++)
+    if (arr->data[i] == node)
+      return true;
+  return false;
+}
+
+static void nodearray_push(NodeArray *arr, Node *node) {
+  if (arr->len == arr->cap) {
+    arr->cap = arr->cap ? arr->cap * 2 : 16;
+    arr->data = realloc(arr->data, sizeof(Node *) * arr->cap);
+  }
+  arr->data[arr->len++] = node;
 }
 
 static void json_sep(FILE *out, bool *first) {
@@ -340,6 +384,10 @@ static void gather_obj_list(DumpContext *ctx, Obj *obj) {
 static void gather_node(DumpContext *ctx, Node *node) {
   if (!node)
     return;
+  if (nodearray_contains(&ctx->nodes, node))
+    return;
+
+  nodearray_push(&ctx->nodes, node);
 
   register_type(ctx, node->ty);
   register_type(ctx, node->func_ty);
@@ -376,6 +424,10 @@ static void gather_node(DumpContext *ctx, Node *node) {
 static void gather_obj(DumpContext *ctx, Obj *obj) {
   if (!obj)
     return;
+  if (objarray_contains(&ctx->objs, obj))
+    return;
+
+  objarray_push(&ctx->objs, obj);
 
   register_type(ctx, obj->ty);
   gather_obj_list(ctx, obj->params);
