@@ -18,11 +18,12 @@ test: $(BINARY)
 	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" bash test/json-dump.sh ./$(BINARY)
 	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" node test/check-fixtures.mjs ./$(BINARY)
 	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" node test/self-parse.mjs ./$(BINARY)
+	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" bash test/build-pack.sh
 
 test-all: test
 
 clean:
-	rm -rf $(BINARY) chibicc stage2 test/*.exe test/*.o test/*.s
+	rm -rf $(BINARY) artifacts chibicc stage2 test/*.exe test/*.o test/*.s
 	find * -type f '(' -name '*~' -o -name '*.o' ')' -exec rm {} ';'
 
 .PHONY: test test-all clean

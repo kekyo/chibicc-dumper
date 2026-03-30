@@ -4,6 +4,9 @@ A JSON dumper tool derived from chibicc that can output C language tokens and AS
 
 ---
 
+> Please note that this English version of the document was machine-translated and then partially edited, so it may contain inaccuracies.
+> We welcome pull requests to correct any errors in the text.
+
 ## What is this?
 
 For developers implementing FFI bridges, the implementation process is monotonous yet requires significant effort to fine-tune.
@@ -110,15 +113,22 @@ On the other hand, chibicc is sufficiently stable, and neither its tokens nor it
 
 ---
 
-## Usage
+## Install
 
-Build the tool with `make`:
+You can install it on your system using the [pre-built packages](https://github.com/kekyo/chibicc-dumper/releases),
+
+- Debian trixie, bookworm: amd64, i686, arm64, armv7l (32-bit), and riscv64
+- Ubuntu 24.04, 22.04: amd64 and arm64
+
+Or, build the tool with `make`:
 
 ```sh
 make
 ```
 
 The executable is generated as `./chibicc-dumper`.
+
+## Usage
 
 ### Command line
 

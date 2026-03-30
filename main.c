@@ -39,14 +39,46 @@ static bool take_arg(char *arg) {
   return false;
 }
 
+static char *resolve_executable_path(char *argv0) {
+#ifdef __linux__
+  char buf[4096];
+  ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+  if (len > 0) {
+    buf[len] = '\0';
+    return strdup(buf);
+  }
+#endif
+  return strdup(argv0);
+}
+
+static char *default_multiarch_include_path(void) {
+#if defined(__x86_64__)
+  return "/usr/include/x86_64-linux-gnu";
+#elif defined(__i386__)
+  return "/usr/include/i386-linux-gnu";
+#elif defined(__aarch64__)
+  return "/usr/include/aarch64-linux-gnu";
+#elif defined(__arm__)
+  return "/usr/include/arm-linux-gnueabihf";
+#elif defined(__riscv) && __riscv_xlen == 64
+  return "/usr/include/riscv64-linux-gnu";
+#else
+  return NULL;
+#endif
+}
+
 static void add_default_include_paths(char *argv0) {
-  // We expect that chibicc-specific include files are installed
-  // to ./include relative to argv[0].
-  strarray_push(&include_paths, format("%s/include", dirname(strdup(argv0))));
+  char *self_path = resolve_executable_path(argv0);
+  char *multiarch_include = default_multiarch_include_path();
+
+  // Use the real executable path so packaged symlinks still resolve the
+  // adjacent builtin header directory correctly.
+  strarray_push(&include_paths, format("%s/include", dirname(self_path)));
 
   // Add standard include paths.
   strarray_push(&include_paths, "/usr/local/include");
-  strarray_push(&include_paths, "/usr/include/x86_64-linux-gnu");
+  if (multiarch_include)
+    strarray_push(&include_paths, multiarch_include);
   strarray_push(&include_paths, "/usr/include");
 
   // Keep a copy of the standard include paths for -MMD option.
