@@ -1,3 +1,164 @@
+# chibicc-dumper
+
+A JSON dumper tool derived from chibicc that can output tokens and ASTs.
+
+## Usage
+
+Build the tool with `make`:
+
+```sh
+make
+```
+
+The executable is generated as `./chibicc-dumper`.
+
+### Command line
+
+```text
+chibicc-dumper [--dump-tokens] [--dump-ast] [ -E ] [ -M | -MD ] [ -o <path> ] <file>
+```
+
+The dumper accepts a single C translation unit as input.
+
+- `--dump-tokens`
+  Dumps the raw phase 1 tokenizer output before preprocessing.
+- `--dump-ast`
+  Dumps the phase 2 parser output after preprocessing.
+- `--dump-tokens --dump-ast`
+  Emits one JSON document containing both views.
+- `-o <path>`
+  Writes the JSON output to a file instead of standard output.
+
+Preprocessor-oriented options such as `-I`, `-idirafter`, `-include`, `-D`, `-U`,
+`-x c|none`, `-E`, and `-M*` are still supported because they are useful for
+front-end analysis.
+
+### Examples
+
+Dump raw tokens to standard output:
+
+```sh
+./chibicc-dumper --dump-tokens sample.c
+```
+
+Dump the parsed AST to a file:
+
+```sh
+./chibicc-dumper --dump-ast -o sample.ast.json sample.c
+```
+
+Dump both tokens and AST in one JSON document:
+
+```sh
+./chibicc-dumper --dump-tokens --dump-ast -o sample.full.json sample.c
+```
+
+### JSON structure
+
+The output is always a single JSON object. The top-level shape is:
+
+```json
+{
+  "types": [...],
+  "tokens": [...],
+  "ast": {
+    "kind": "program",
+    "globals": [...]
+  }
+}
+```
+
+`types` is always present. `tokens` is present only when `--dump-tokens` is
+requested, and `ast` is present only when `--dump-ast` is requested.
+
+Token entries contain lexical information such as token kind, source lexeme,
+source file, line number, beginning-of-line state, and whitespace information.
+For example:
+
+```json
+{
+  "types": [],
+  "tokens": [
+    {
+      "kind": "TK_IDENT",
+      "lexeme": "int",
+      "file": "sample.c",
+      "line": 1,
+      "atBol": true,
+      "hasSpace": false
+    },
+    {
+      "kind": "TK_PP_NUM",
+      "lexeme": "42",
+      "file": "sample.c",
+      "line": 1,
+      "atBol": false,
+      "hasSpace": true
+    }
+  ]
+}
+```
+
+AST output contains normalized type references through fields such as
+`typeId`, `baseTypeId`, and `returnTypeId`. Function definitions appear under
+`ast.globals`, and statement/expression nodes are nested under each function's
+`body`. For example:
+
+```json
+{
+  "types": [
+    {
+      "id": 4,
+      "kind": "TY_FUNC",
+      "name": "main",
+      "returnTypeId": 5,
+      "paramTypeIds": [],
+      "isVariadic": false
+    },
+    {
+      "id": 5,
+      "kind": "TY_INT",
+      "size": 4,
+      "align": 4,
+      "isUnsigned": false,
+      "isAtomic": false,
+      "originTypeId": null
+    }
+  ],
+  "ast": {
+    "kind": "program",
+    "globals": [
+      {
+        "name": "main",
+        "typeId": 4,
+        "isFunction": true,
+        "body": {
+          "kind": "ND_BLOCK",
+          "body": [
+            {
+              "kind": "ND_RETURN",
+              "lhs": {
+                "kind": "ND_NUM",
+                "typeId": 5,
+                "value": 42
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+## License
+
+Under MIT.
+
+---
+
+The following document is the original README for chibicc:
+
 # chibicc: A Small C Compiler
 
 (The old master has moved to
