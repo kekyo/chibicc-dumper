@@ -11,3 +11,8 @@
 /test/*.exe
 /stage2
 /test_results
+/dist
+/lib
+/node_modules
+/src/generated
+/src/wasm

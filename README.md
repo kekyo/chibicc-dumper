@@ -271,87 +271,87 @@ AST output contains normalized type references through fields such as
 
 ### Token variation
 
-|Token|Details|
-|:----|:----|
-|`TK_IDENT`|Identifier token emitted by the tokenizer.|
-|`TK_PUNCT`|Punctuation or operator token such as `(`, `)`, `+`, or `->`.|
-|`TK_KEYWORD`|Reserved language keyword after keyword classification.|
-|`TK_STR`|String literal token with decoded string bytes and a string type.|
-|`TK_NUM`|Numeric token after semantic number parsing.|
-|`TK_PP_NUM`|Preprocessor-number token before final numeric interpretation.|
-|`TK_EOF`|End-of-file sentinel token appended to every token stream.|
+| Token        | Details                                                           |
+| :----------- | :---------------------------------------------------------------- |
+| `TK_IDENT`   | Identifier token emitted by the tokenizer.                        |
+| `TK_PUNCT`   | Punctuation or operator token such as `(`, `)`, `+`, or `->`.     |
+| `TK_KEYWORD` | Reserved language keyword after keyword classification.           |
+| `TK_STR`     | String literal token with decoded string bytes and a string type. |
+| `TK_NUM`     | Numeric token after semantic number parsing.                      |
+| `TK_PP_NUM`  | Preprocessor-number token before final numeric interpretation.    |
+| `TK_EOF`     | End-of-file sentinel token appended to every token stream.        |
 
 ### AST node variation
 
-|Type|Details|
-|:----|:----|
-|`TY_VOID`|The `void` type.|
-|`TY_BOOL`|The `_Bool` type.|
-|`TY_CHAR`|The `char` type.|
-|`TY_SHORT`|The `short` type.|
-|`TY_INT`|The `int` type.|
-|`TY_LONG`|The `long` type.|
-|`TY_FLOAT`|The `float` type.|
-|`TY_DOUBLE`|The `double` type.|
-|`TY_LDOUBLE`|The `long double` type.|
-|`TY_ENUM`|An enum type.|
-|`TY_PTR`|A pointer type with `baseTypeId` pointing to the pointee type.|
-|`TY_FUNC`|A function type with `returnTypeId` and `paramTypeIds`.|
-|`TY_ARRAY`|A fixed-size array type with `baseTypeId` and `arrayLen`.|
-|`TY_VLA`|A variable-length array type.|
-|`TY_STRUCT`|A struct type, including member layout metadata.|
-|`TY_UNION`|A union type, including member layout metadata.|
+| Type         | Details                                                        |
+| :----------- | :------------------------------------------------------------- |
+| `TY_VOID`    | The `void` type.                                               |
+| `TY_BOOL`    | The `_Bool` type.                                              |
+| `TY_CHAR`    | The `char` type.                                               |
+| `TY_SHORT`   | The `short` type.                                              |
+| `TY_INT`     | The `int` type.                                                |
+| `TY_LONG`    | The `long` type.                                               |
+| `TY_FLOAT`   | The `float` type.                                              |
+| `TY_DOUBLE`  | The `double` type.                                             |
+| `TY_LDOUBLE` | The `long double` type.                                        |
+| `TY_ENUM`    | An enum type.                                                  |
+| `TY_PTR`     | A pointer type with `baseTypeId` pointing to the pointee type. |
+| `TY_FUNC`    | A function type with `returnTypeId` and `paramTypeIds`.        |
+| `TY_ARRAY`   | A fixed-size array type with `baseTypeId` and `arrayLen`.      |
+| `TY_VLA`     | A variable-length array type.                                  |
+| `TY_STRUCT`  | A struct type, including member layout metadata.               |
+| `TY_UNION`   | A union type, including member layout metadata.                |
 
-|Node|Details|
-|:----|:----|
-|`ND_NULL_EXPR`|A no-op expression placeholder.|
-|`ND_ADD`|Addition expression.|
-|`ND_SUB`|Subtraction expression.|
-|`ND_MUL`|Multiplication expression.|
-|`ND_DIV`|Division expression.|
-|`ND_NEG`|Unary minus expression.|
-|`ND_MOD`|Remainder expression.|
-|`ND_BITAND`|Bitwise AND expression.|
-|`ND_BITOR`|Bitwise OR expression.|
-|`ND_BITXOR`|Bitwise XOR expression.|
-|`ND_SHL`|Left-shift expression.|
-|`ND_SHR`|Right-shift expression.|
-|`ND_EQ`|Equality comparison expression.|
-|`ND_NE`|Inequality comparison expression.|
-|`ND_LT`|Less-than comparison expression.|
-|`ND_LE`|Less-than-or-equal comparison expression.|
-|`ND_ASSIGN`|Assignment expression.|
-|`ND_COND`|Ternary conditional (`?:`) expression.|
-|`ND_COMMA`|Comma operator expression.|
-|`ND_MEMBER`|Struct or union member access.|
-|`ND_ADDR`|Address-of (`&`) expression.|
-|`ND_DEREF`|Pointer dereference (`*`) expression.|
-|`ND_NOT`|Logical NOT expression.|
-|`ND_BITNOT`|Bitwise NOT expression.|
-|`ND_LOGAND`|Logical AND expression with short-circuit semantics.|
-|`ND_LOGOR`|Logical OR expression with short-circuit semantics.|
-|`ND_RETURN`|Return statement.|
-|`ND_IF`|`if` / `else` statement.|
-|`ND_FOR`|`for`-style loop node used for normalized loop forms.|
-|`ND_DO`|`do ... while` loop.|
-|`ND_SWITCH`|`switch` statement.|
-|`ND_CASE`|`case` or `default` label inside a switch.|
-|`ND_BLOCK`|Compound statement containing a `body` list.|
-|`ND_GOTO`|Direct `goto` statement.|
-|`ND_GOTO_EXPR`|Computed goto expression.|
-|`ND_LABEL`|Labeled statement.|
-|`ND_LABEL_VAL`|GNU label-address expression such as `&&label`.|
-|`ND_FUNCALL`|Function call expression.|
-|`ND_EXPR_STMT`|Expression statement.|
-|`ND_STMT_EXPR`|GNU statement-expression (`({ ... })`).|
-|`ND_VAR`|Variable reference expression.|
-|`ND_VLA_PTR`|Internal node that references the storage backing a VLA.|
-|`ND_NUM`|Numeric literal expression.|
-|`ND_CAST`|Cast expression.|
-|`ND_MEMZERO`|Internal zero-fill helper inserted by initialization lowering.|
-|`ND_ASM`|GNU inline assembly statement node.|
-|`ND_CAS`|Atomic compare-and-swap helper node.|
-|`ND_EXCH`|Atomic exchange helper node.|
+| Node           | Details                                                        |
+| :------------- | :------------------------------------------------------------- |
+| `ND_NULL_EXPR` | A no-op expression placeholder.                                |
+| `ND_ADD`       | Addition expression.                                           |
+| `ND_SUB`       | Subtraction expression.                                        |
+| `ND_MUL`       | Multiplication expression.                                     |
+| `ND_DIV`       | Division expression.                                           |
+| `ND_NEG`       | Unary minus expression.                                        |
+| `ND_MOD`       | Remainder expression.                                          |
+| `ND_BITAND`    | Bitwise AND expression.                                        |
+| `ND_BITOR`     | Bitwise OR expression.                                         |
+| `ND_BITXOR`    | Bitwise XOR expression.                                        |
+| `ND_SHL`       | Left-shift expression.                                         |
+| `ND_SHR`       | Right-shift expression.                                        |
+| `ND_EQ`        | Equality comparison expression.                                |
+| `ND_NE`        | Inequality comparison expression.                              |
+| `ND_LT`        | Less-than comparison expression.                               |
+| `ND_LE`        | Less-than-or-equal comparison expression.                      |
+| `ND_ASSIGN`    | Assignment expression.                                         |
+| `ND_COND`      | Ternary conditional (`?:`) expression.                         |
+| `ND_COMMA`     | Comma operator expression.                                     |
+| `ND_MEMBER`    | Struct or union member access.                                 |
+| `ND_ADDR`      | Address-of (`&`) expression.                                   |
+| `ND_DEREF`     | Pointer dereference (`*`) expression.                          |
+| `ND_NOT`       | Logical NOT expression.                                        |
+| `ND_BITNOT`    | Bitwise NOT expression.                                        |
+| `ND_LOGAND`    | Logical AND expression with short-circuit semantics.           |
+| `ND_LOGOR`     | Logical OR expression with short-circuit semantics.            |
+| `ND_RETURN`    | Return statement.                                              |
+| `ND_IF`        | `if` / `else` statement.                                       |
+| `ND_FOR`       | `for`-style loop node used for normalized loop forms.          |
+| `ND_DO`        | `do ... while` loop.                                           |
+| `ND_SWITCH`    | `switch` statement.                                            |
+| `ND_CASE`      | `case` or `default` label inside a switch.                     |
+| `ND_BLOCK`     | Compound statement containing a `body` list.                   |
+| `ND_GOTO`      | Direct `goto` statement.                                       |
+| `ND_GOTO_EXPR` | Computed goto expression.                                      |
+| `ND_LABEL`     | Labeled statement.                                             |
+| `ND_LABEL_VAL` | GNU label-address expression such as `&&label`.                |
+| `ND_FUNCALL`   | Function call expression.                                      |
+| `ND_EXPR_STMT` | Expression statement.                                          |
+| `ND_STMT_EXPR` | GNU statement-expression (`({ ... })`).                        |
+| `ND_VAR`       | Variable reference expression.                                 |
+| `ND_VLA_PTR`   | Internal node that references the storage backing a VLA.       |
+| `ND_NUM`       | Numeric literal expression.                                    |
+| `ND_CAST`      | Cast expression.                                               |
+| `ND_MEMZERO`   | Internal zero-fill helper inserted by initialization lowering. |
+| `ND_ASM`       | GNU inline assembly statement node.                            |
+| `ND_CAS`       | Atomic compare-and-swap helper node.                           |
+| `ND_EXCH`      | Atomic exchange helper node.                                   |
 
 ## License
 
@@ -517,7 +517,7 @@ though). Here is a few notable examples:
 
 - Slow algorithms are fine if we know that n isn't too big.
   For example, we use a linked list as a set in the preprocessor, so
-  the membership check takes O(n) where n is the size of the set.  But
+  the membership check takes O(n) where n is the size of the set. But
   that's fine because we know n is usually very small.
   And even if n can be very big, I stick with a simple slow algorithm
   until it is proved by benchmarks that that's a bottleneck.

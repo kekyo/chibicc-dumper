@@ -19,6 +19,10 @@ static StringArray input_paths;
 
 char *base_file;
 static char *output_file;
+static bool capture_stdout;
+static char *captured_stdout;
+static size_t captured_stdout_len;
+static FILE *captured_stdout_file;
 
 static void usage(int status) {
   fprintf(stderr,
@@ -283,6 +287,11 @@ static void parse_args(int argc, char **argv) {
 }
 
 static FILE *open_file(char *path) {
+  if ((!path || strcmp(path, "-") == 0) && capture_stdout) {
+    captured_stdout_file = open_memstream(&captured_stdout, &captured_stdout_len);
+    return captured_stdout_file;
+  }
+
   if (!path || strcmp(path, "-") == 0)
     return stdout;
 
@@ -290,6 +299,15 @@ static FILE *open_file(char *path) {
   if (!out)
     error("cannot open output file: %s: %s", path, strerror(errno));
   return out;
+}
+
+static void close_file(FILE *out) {
+  if (out == stdout)
+    return;
+
+  fclose(out);
+  if (out == captured_stdout_file)
+    captured_stdout_file = NULL;
 }
 
 static char *replace_extn(char *tmpl, char *extn) {
@@ -314,6 +332,7 @@ static void print_tokens(Token *tok) {
     line++;
   }
   fprintf(out, "\n");
+  close_file(out);
 }
 
 static bool in_std_include_path(char *path) {
@@ -364,8 +383,7 @@ static void print_dependencies(void) {
     }
   }
 
-  if (out != stdout)
-    fclose(out);
+  close_file(out);
 }
 
 static Token *must_tokenize_file(char *path) {
@@ -437,8 +455,7 @@ static void cc1(void) {
 
     FILE *out = open_file(output_file ? output_file : "-");
     dump_translation_unit_json(raw_tok, prog, opt_dump_tokens, opt_dump_ast, out);
-    if (out != stdout)
-      fclose(out);
+    close_file(out);
     return;
   }
 
@@ -457,20 +474,41 @@ int chibicc_driver_main(int argc, char **argv) {
   return 0;
 }
 
-bool chibicc_driver_try_main(int argc, char **argv, int *status,
-                             char **error_message) {
+bool chibicc_driver_try_capture_main(int argc, char **argv, int *status,
+                                     char **output, char **error_message) {
   ChibiccErrorContext ctx;
+  capture_stdout = true;
+  captured_stdout = NULL;
+  captured_stdout_len = 0;
+  captured_stdout_file = NULL;
   chibicc_begin_error_capture(&ctx);
 
   if (setjmp(ctx.env) == 0) {
     *status = chibicc_driver_main(argc, argv);
+    if (captured_stdout_file)
+      close_file(captured_stdout_file);
+    *output = captured_stdout ? captured_stdout : strdup("");
     *error_message = NULL;
     chibicc_end_error_capture();
+    capture_stdout = false;
     return true;
   }
 
+  if (captured_stdout_file)
+    close_file(captured_stdout_file);
   *status = 1;
+  *output = NULL;
   *error_message = ctx.message;
   chibicc_end_error_capture();
+  capture_stdout = false;
   return false;
+}
+
+bool chibicc_driver_try_main(int argc, char **argv, int *status,
+                             char **error_message) {
+  char *output;
+  bool ok = chibicc_driver_try_capture_main(argc, argv, status, &output,
+                                            error_message);
+  free(output);
+  return ok;
 }

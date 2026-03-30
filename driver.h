@@ -22,4 +22,16 @@ int chibicc_driver_main(int argc, char **argv);
 bool chibicc_driver_try_main(int argc, char **argv, int *status,
                              char **error_message);
 
+/**
+ * @brief Runs the CLI driver while capturing stdout output and fatal diagnostics.
+ * @param argc Number of command-line arguments.
+ * @param argv Command-line argument vector.
+ * @param status Receives the exit status.
+ * @param output Receives the captured stdout contents on success.
+ * @param error_message Receives the fatal diagnostic on failure.
+ * @return `true` on success, otherwise `false`.
+ */
+bool chibicc_driver_try_capture_main(int argc, char **argv, int *status,
+                                     char **output, char **error_message);
+
 #endif
