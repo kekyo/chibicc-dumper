@@ -36,11 +36,8 @@ validate_positive_integer() {
 }
 
 require_env CHIBICC_DUMPER_SOURCE_ROOT
-require_env CHIBICC_DUMPER_RUN_ROOT
 require_env CHIBICC_DUMPER_WORK_DIR
 require_env CHIBICC_DUMPER_META_DIR
-require_env CHIBICC_DUMPER_HOST_UID
-require_env CHIBICC_DUMPER_HOST_GID
 require_env CHIBICC_DUMPER_PACKAGE_NAME
 require_env CHIBICC_DUMPER_PACKAGE_VERSION
 require_env CHIBICC_DUMPER_PACKAGE_DESCRIPTION
@@ -67,13 +64,8 @@ require_command make
 require_command tar
 
 source_root=$CHIBICC_DUMPER_SOURCE_ROOT
-run_root=$CHIBICC_DUMPER_RUN_ROOT
 work_dir=$CHIBICC_DUMPER_WORK_DIR
 meta_dir=$CHIBICC_DUMPER_META_DIR
-job_dir=$(dirname "$work_dir")
-release_dir=$(dirname "$job_dir")
-distro_dir=$(dirname "$release_dir")
-deb_root=$(dirname "$distro_dir")
 package_name=$CHIBICC_DUMPER_PACKAGE_NAME
 build_root=/tmp/chibicc-dumper-build
 pack_root=/tmp/chibicc-dumper-pack
@@ -82,17 +74,6 @@ binary_dir="$pkg_root/usr/lib/$package_name"
 include_dir="$binary_dir/include"
 doc_dir="$pkg_root/usr/share/doc/$package_name"
 control_dir="$pkg_root/DEBIAN"
-
-restore_host_ownership() {
-	chown "$CHIBICC_DUMPER_HOST_UID:$CHIBICC_DUMPER_HOST_GID" \
-		"$deb_root" \
-		"$distro_dir" \
-		"$release_dir" \
-		"$job_dir" >/dev/null 2>&1 || true
-	[ -e "$job_dir" ] && chown -R "$CHIBICC_DUMPER_HOST_UID:$CHIBICC_DUMPER_HOST_GID" "$job_dir" || true
-}
-
-trap restore_host_ownership EXIT
 
 rm -rf "$build_root" "$pack_root" "$work_dir" "$meta_dir"
 mkdir -p "$build_root" "$control_dir" "$binary_dir" "$include_dir" "$doc_dir" "$pkg_root/usr/bin" "$work_dir" "$meta_dir"
@@ -103,7 +84,7 @@ tar -C "$source_root" \
 	--exclude='./dist' \
 	--exclude='./node_modules' \
 	--exclude='./test_results' \
-	-cf - . | tar -C "$build_root" -xf -
+	-cf - . | tar --no-same-owner --no-same-permissions -C "$build_root" -xf -
 
 cd "$build_root"
 make clean

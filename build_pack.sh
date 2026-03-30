@@ -14,11 +14,11 @@ LINUX_MATRIX=$(cat <<'EOF'
 debian bookworm x86_64 linux/amd64
 debian bookworm i686 linux/386
 debian bookworm arm64 linux/arm64
-debian bookworm armv7l linux/arm/v7
+debian bookworm armv7l linux/arm
 debian trixie x86_64 linux/amd64
 debian trixie i686 linux/386
 debian trixie arm64 linux/arm64
-debian trixie armv7l linux/arm/v7
+debian trixie armv7l linux/arm
 debian trixie riscv64 linux/riscv64
 ubuntu 22.04 x86_64 linux/amd64
 ubuntu 22.04 arm64 linux/arm64
@@ -32,10 +32,11 @@ print_usage() {
 Usage: ./build_pack.sh [options]
 
 Options:
+  --version <version>  Debian package version. Defaults to a screw-up-derived version.
   --distro <list>      Comma-separated distro filter for deb builds.
   --release <list>     Comma-separated release filter for deb builds.
   --arch <list>        Comma-separated architecture filter.
-  --jobs <count>       Maximum concurrent package jobs. Defaults to auto (up to 8).
+  --jobs <count>       Maximum concurrent package jobs. Defaults to auto (up to 14).
   --print-version      Print the resolved package version and exit.
   --help               Show this help.
 EOF
@@ -160,19 +161,14 @@ EOF
 
 choose_container_engine() {
 	if [ -n "${CONTAINER_ENGINE:-}" ]; then
+		engine_name=${CONTAINER_ENGINE##*/}
+		[ "$engine_name" = 'podman' ] || fail 'Only podman is supported as the container engine'
 		require_command "$CONTAINER_ENGINE"
 		printf '%s\n' "$CONTAINER_ENGINE"
 		return 0
 	fi
-	if command -v docker >/dev/null 2>&1; then
-		printf '%s\n' 'docker'
-		return 0
-	fi
-	if command -v podman >/dev/null 2>&1; then
-		printf '%s\n' 'podman'
-		return 0
-	fi
-	fail 'Missing required container engine: podman or docker'
+	require_command podman
+	printf '%s\n' 'podman'
 }
 
 container_image_for_target() {
@@ -208,33 +204,47 @@ build_deb_package() {
 	arch=$3
 	platform=$4
 	image=$(container_image_for_target "$distro" "$release" "$arch")
+	resolved_image=$("$CONTAINER_ENGINE_BIN" pull --quiet --platform "$platform" "$image")
 	work_root="$TMP_ROOT/deb/$distro/$release/$arch"
-	container_root="/workspace/artifacts/.tmp/$RUN_ID/deb/$distro/$release/$arch"
-	work_dir="$container_root/work"
-	meta_dir="$container_root/meta"
+	container_release=$(printf '%s' "$release" | tr './:' '---')
+	container_name="chibicc-dumper-${RUN_ID}-${distro}-${container_release}-${arch}-$$"
+	container_export_root="/tmp/chibicc-dumper-export"
+	work_dir="$container_export_root/work"
+	meta_dir="$container_export_root/meta"
 	package_dir="$ARTIFACT_ROOT/deb"
 
 	printf '%s\n' "[deb] $distro $release $arch"
 	mkdir -p "$package_dir"
+	[ -n "$resolved_image" ] || fail "Failed to resolve container image: $image ($platform)"
 
-	"$CONTAINER_ENGINE_BIN" run --rm \
-		--platform "$platform" \
-		-v "$PROJECT_ROOT:/workspace" \
+	cleanup_container() {
+		"$CONTAINER_ENGINE_BIN" rm -f "$container_name" >/dev/null 2>&1 || true
+	}
+
+	trap cleanup_container EXIT HUP INT TERM
+
+	rm -rf "$work_root"
+	mkdir -p "$work_root"
+
+	"$CONTAINER_ENGINE_BIN" run \
+		--name "$container_name" \
+		-v "$PROJECT_ROOT:/workspace:ro" \
 		-w /workspace \
 		-e CHIBICC_DUMPER_RUN_ROOT="/workspace/artifacts/.tmp/$RUN_ID" \
 		-e CHIBICC_DUMPER_SOURCE_ROOT=/workspace \
 		-e CHIBICC_DUMPER_WORK_DIR="$work_dir" \
 		-e CHIBICC_DUMPER_META_DIR="$meta_dir" \
-		-e CHIBICC_DUMPER_HOST_UID="$(id -u)" \
-		-e CHIBICC_DUMPER_HOST_GID="$(id -g)" \
 		-e CHIBICC_DUMPER_PACKAGE_NAME="$PACKAGE_NAME" \
 		-e CHIBICC_DUMPER_PACKAGE_VERSION="$VERSION" \
 		-e CHIBICC_DUMPER_PACKAGE_DESCRIPTION="$PACKAGE_DESCRIPTION" \
 		-e CHIBICC_DUMPER_PACKAGE_MAINTAINER="${DEB_MAINTAINER:-$DEFAULT_MAINTAINER}" \
 		-e CHIBICC_DUMPER_PROJECT_HOMEPAGE="$PROJECT_HOMEPAGE" \
 		-e CHIBICC_DUMPER_MAKE_JOBS="$MAKE_JOBS" \
-		"$image" \
+		"$resolved_image" \
 		./scripts/build_linux_dist_container.sh
+	"$CONTAINER_ENGINE_BIN" cp "$container_name:$container_export_root/." "$work_root"
+	cleanup_container
+	trap - EXIT HUP INT TERM
 
 	deb_arch=$(cat "$work_root/meta/deb_arch")
 	package_path="$package_dir/${PACKAGE_NAME}-${VERSION}-${distro}-${release}-${deb_arch}.deb"
@@ -297,6 +307,7 @@ cleanup() {
 	rm -rf "$TMP_ROOT"
 }
 
+VERSION=''
 DISTRO_FILTER=''
 RELEASE_FILTER=''
 ARCH_FILTER=''
@@ -305,6 +316,11 @@ PRINT_VERSION='false'
 
 while [ "$#" -gt 0 ]; do
 	case $1 in
+		--version)
+			[ "$#" -ge 2 ] || fail 'Missing value for --version'
+			VERSION=$2
+			shift 2
+			;;
 		--distro)
 			[ "$#" -ge 2 ] || fail 'Missing value for --distro'
 			DISTRO_FILTER=$2
@@ -339,7 +355,9 @@ while [ "$#" -gt 0 ]; do
 	esac
 done
 
-VERSION=$(detect_version)
+if [ -z "$VERSION" ]; then
+	VERSION=$(detect_version)
+fi
 validate_version "$VERSION"
 
 if [ -n "$PARALLEL_JOBS" ]; then
