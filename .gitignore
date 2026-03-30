@@ -6,6 +6,7 @@
 /tmp*
 /thirdparty
 /chibicc
+/chibicc-dumper
 /test/*.exe
 /stage2
 /test_results

@@ -17,7 +17,7 @@ check() {
 }
 
 # --help
-$chibicc --help 2>&1 | grep -q chibicc
+$chibicc --help 2>&1 | grep -q chibicc-dumper
 check --help
 
 # -E

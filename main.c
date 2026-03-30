@@ -22,7 +22,7 @@ static char *output_file;
 
 static void usage(int status) {
   fprintf(stderr,
-          "chibicc [--dump-tokens] [--dump-ast] [ -E ] [ -M | -MD ] "
+          "chibicc-dumper [--dump-tokens] [--dump-ast] [ -E ] [ -M | -MD ] "
           "[ -o <path> ] <file>\n");
   exit(status);
 }
