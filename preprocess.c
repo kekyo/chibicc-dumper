@@ -80,10 +80,12 @@ static bool is_hash(Token *tok) {
 // Some preprocessor directives such as #include allow extraneous
 // tokens before newline. This function skips such tokens.
 static Token *skip_line(Token *tok) {
+  while (tok->kind == TK_COMMENT)
+    tok = tok->next;
   if (tok->at_bol)
     return tok;
   warn_tok(tok, "extra token");
-  while (tok->at_bol)
+  while (tok->kind != TK_EOF && !tok->at_bol)
     tok = tok->next;
   return tok;
 }
@@ -93,6 +95,26 @@ static Token *copy_token(Token *tok) {
   *t = *tok;
   t->next = NULL;
   return t;
+}
+
+static Token *strip_comment_tokens(Token *tok) {
+  Token head = {};
+  Token *cur = &head;
+
+  for (; tok; tok = tok->next) {
+    if (tok->kind == TK_COMMENT)
+      continue;
+    cur = cur->next = tok;
+    if (tok->kind == TK_EOF)
+      break;
+  }
+
+  cur->next = NULL;
+  return head.next;
+}
+
+static Token *tokenize_for_preprocess(File *file) {
+  return strip_comment_tokens(tokenize(file));
 }
 
 static Token *new_eof(Token *tok) {
@@ -220,7 +242,7 @@ static char *quote_string(char *str) {
 
 static Token *new_str_token(char *str, Token *tmpl) {
   char *buf = quote_string(str);
-  return tokenize(new_file(tmpl->file->name, tmpl->file->file_no, buf));
+  return tokenize_for_preprocess(new_file(tmpl->file->name, tmpl->file->file_no, buf));
 }
 
 // Copy all tokens until the next newline, terminate them with
@@ -240,7 +262,7 @@ static Token *copy_line(Token **rest, Token *tok) {
 
 static Token *new_num_token(int val, Token *tmpl) {
   char *buf = format("%d\n", val);
-  return tokenize(new_file(tmpl->file->name, tmpl->file->file_no, buf));
+  return tokenize_for_preprocess(new_file(tmpl->file->name, tmpl->file->file_no, buf));
 }
 
 static Token *read_const_expr(Token **rest, Token *tok) {
@@ -501,7 +523,7 @@ static Token *paste(Token *lhs, Token *rhs) {
   char *buf = format("%.*s%.*s", lhs->len, lhs->loc, rhs->len, rhs->loc);
 
   // Tokenize the resulting string.
-  Token *tok = tokenize(new_file(lhs->file->name, lhs->file->file_no, buf));
+  Token *tok = tokenize_for_preprocess(new_file(lhs->file->name, lhs->file->file_no, buf));
   if (tok->next->kind != TK_EOF)
     error_tok(lhs, "pasting forms '%s', an invalid token", buf);
   return tok;
@@ -805,7 +827,7 @@ static Token *include_file(Token *tok, char *path, Token *filename_tok) {
   if (guard_name && hashmap_get(&macros, guard_name))
     return tok;
 
-  Token *tok2 = tokenize_file(path);
+  Token *tok2 = strip_comment_tokens(tokenize_file(path));
   if (!tok2)
     error_tok(filename_tok, "%s: cannot open file: %s", path, strerror(errno));
 
@@ -841,6 +863,11 @@ static Token *preprocess2(Token *tok) {
   Token *cur = &head;
 
   while (tok->kind != TK_EOF) {
+    if (tok->kind == TK_COMMENT) {
+      tok = tok->next;
+      continue;
+    }
+
     // If it is a macro, expand it.
     if (expand_macro(&tok, tok))
       continue;
@@ -991,7 +1018,7 @@ static Token *preprocess2(Token *tok) {
 }
 
 void define_macro(char *name, char *buf) {
-  Token *tok = tokenize(new_file("<built-in>", 1, buf));
+  Token *tok = tokenize_for_preprocess(new_file("<built-in>", 1, buf));
   add_macro(name, true, tok);
 }
 
@@ -1028,12 +1055,12 @@ static Token *counter_macro(Token *tmpl) {
 // modification time of the current file. E.g.
 // "Fri Jul 24 01:32:50 2020"
 static Token *timestamp_macro(Token *tmpl) {
-  struct stat st;
-  if (stat(tmpl->file->name, &st) != 0)
+  time_t timestamp;
+  if (!chibicc_get_file_timestamp(tmpl->file->name, &timestamp))
     return new_str_token("??? ??? ?? ??:??:?? ????", tmpl);
 
   char buf[30];
-  ctime_r(&st.st_mtime, buf);
+  ctime_r(&timestamp, buf);
   buf[24] = '\0';
   return new_str_token(buf, tmpl);
 }

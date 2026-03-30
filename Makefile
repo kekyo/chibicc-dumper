@@ -1,50 +1,29 @@
-CFLAGS=-std=c11 -g -fno-common -Wall -Wno-switch
+CFLAGS=-std=c11 -O2 -g -Wall -Wno-switch
+TEST_RESULTS_STAMP:=$(shell date +%Y%m%d_%H%M%S_%3N)
+TEST_RESULTS_DIR:=$(CURDIR)/test_results/$(TEST_RESULTS_STAMP)
+BINARY=chibicc-dumper
 
 SRCS=$(wildcard *.c)
 OBJS=$(SRCS:.c=.o)
 
-TEST_SRCS=$(wildcard test/*.c)
-TESTS=$(TEST_SRCS:.c=.exe)
-
-# Stage 1
-
-chibicc: $(OBJS)
+$(BINARY): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $(OBJS): chibicc.h
 
-test/%.exe: chibicc test/%.c
-	./chibicc -Iinclude -Itest -c -o test/$*.o test/$*.c
-	$(CC) -pthread -o $@ test/$*.o -xc test/common
+test: $(BINARY)
+	mkdir -p "$(TEST_RESULTS_DIR)"
+	echo "writing JSON test results to $(TEST_RESULTS_DIR)"
+	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" bash test/driver.sh ./$(BINARY)
+	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" bash test/json-dump.sh ./$(BINARY)
+	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" node test/check-fixtures.mjs ./$(BINARY)
+	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" node test/self-parse.mjs ./$(BINARY)
+	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" bash test/build-pack.sh
 
-test: $(TESTS)
-	for i in $^; do echo $$i; ./$$i || exit 1; echo; done
-	test/driver.sh ./chibicc
-
-test-all: test test-stage2
-
-# Stage 2
-
-stage2/chibicc: $(OBJS:%=stage2/%)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-stage2/%.o: chibicc %.c
-	mkdir -p stage2/test
-	./chibicc -c -o $(@D)/$*.o $*.c
-
-stage2/test/%.exe: stage2/chibicc test/%.c
-	mkdir -p stage2/test
-	./stage2/chibicc -Iinclude -Itest -c -o stage2/test/$*.o test/$*.c
-	$(CC) -pthread -o $@ stage2/test/$*.o -xc test/common
-
-test-stage2: $(TESTS:test/%=stage2/test/%)
-	for i in $^; do echo $$i; ./$$i || exit 1; echo; done
-	test/driver.sh ./stage2/chibicc
-
-# Misc.
+test-all: test
 
 clean:
-	rm -rf chibicc tmp* $(TESTS) test/*.s test/*.exe stage2
+	rm -rf $(BINARY) artifacts chibicc stage2 test/*.exe test/*.o test/*.s
 	find * -type f '(' -name '*~' -o -name '*.o' ')' -exec rm {} ';'
 
-.PHONY: test clean test-stage2
+.PHONY: test test-all clean

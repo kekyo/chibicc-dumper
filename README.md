@@ -1,209 +1,837 @@
-# chibicc: A Small C Compiler
+# chibicc-dumper
 
-(The old master has moved to
-[historical/old](https://github.com/rui314/chibicc/tree/historical/old)
-branch. This is a new one uploaded in September 2020.)
+A JSON dumper tool derived from chibicc that can output C language tokens and ASTs.
 
-chibicc is yet another small C compiler that implements most C11
-features. Even though it still probably falls into the "toy compilers"
-category just like other small compilers do, chibicc can compile
-several real-world programs, including [Git](https://git-scm.com/),
-[SQLite](https://sqlite.org),
-[libpng](http://www.libpng.org/pub/png/libpng.html) and chibicc
-itself, without making modifications to the compiled programs.
-Generated executables of these programs pass their corresponding test
-suites. So, chibicc actually supports a wide variety of C11 features
-and is able to compile hundreds of thousands of lines of real-world C
-code correctly.
+[![Project Status: WIP – Initial development is in progress, but there has not yet been a stable, usable release suitable for the public.](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![npm version](https://img.shields.io/npm/v/chibicc-dumper.svg)](https://www.npmjs.com/package/chibicc-dumper)
 
-chibicc is developed as the reference implementation for a book I'm
-currently writing about the C compiler and the low-level programming.
-The book covers the vast topic with an incremental approach; in the first
-chapter, readers will implement a "compiler" that accepts just a single
-number as a "language", which will then gain one feature at a time in each
-section of the book until the language that the compiler accepts matches
-what the C11 spec specifies. I took this incremental approach from [the
-paper](http://scheme2006.cs.uchicago.edu/11-ghuloum.pdf) by Abdulaziz
-Ghuloum.
+---
 
-Each commit of this project corresponds to a section of the book. For this
-purpose, not only the final state of the project but each commit was
-carefully written with readability in mind. Readers should be able to learn
-how a C language feature can be implemented just by reading one or a few
-commits of this project. For example, this is how
-[while](https://github.com/rui314/chibicc/commit/773115ab2a9c4b96f804311b95b20e9771f0190a),
-[[]](https://github.com/rui314/chibicc/commit/75fbd3dd6efde12eac8225d8b5723093836170a5),
-[?:](https://github.com/rui314/chibicc/commit/1d0e942fd567a35d296d0f10b7693e98b3dd037c),
-and [thread-local
-variable](https://github.com/rui314/chibicc/commit/79644e54cc1805e54428cde68b20d6d493b76d34)
-are implemented. If you have plenty of spare time, it might be fun to read
-it from the [first
-commit](https://github.com/rui314/chibicc/commit/0522e2d77e3ab82d3b80a5be8dbbdc8d4180561c).
+[(Japanese language is here/日本語はこちら)](./README_ja.md)
 
-If you like this project, please consider purchasing a copy of the book
-when it becomes available! 😀 I publish the source code here to give people
-early access to it, because I was planing to do that anyway with a
-permissive open-source license after publishing the book. If I don't charge
-for the source code, it doesn't make much sense to me to keep it private. I
-hope to publish the book in 2021.
-You can sign up [here](https://forms.gle/sgrMWHGeGjeeEJcX7) to receive a
-notification when a free chapter is available online or the book is published.
+> Please note that this English version of the document was machine-translated and then partially edited, so it may contain inaccuracies.
+> We welcome pull requests to correct any errors in the text.
 
-I pronounce chibicc as _chee bee cee cee_. "chibi" means "mini" or
-"small" in Japanese. "cc" stands for C compiler.
+## What is this?
 
-## Status
+For developers implementing FFI bridges, the implementation process is monotonous yet requires significant effort to fine-tune.
+Implementing this part forces developers to choose between 3 approaches:
 
-chibicc supports almost all mandatory features and most optional
-features of C11 as well as a few GCC language extensions.
+- "Outputting metadata from the target language system and using it to generate C source code for the glue,"
+- Or "Parsing the C source code in some crude way and generating the glue code from that."
+- Alternatively, they might give up on both and resort to the even more tedious task of outputting both from "Something abstract like IDL."
 
-Features that are often missing in a small compiler but supported by
-chibicc include (but not limited to):
+While it is impossible to fully automate all of this work, what if we could easily obtain token sequences or AST information from the C source code?
+It might be possible to automatically generate bridge code from such information.
+This means we can treat the C source code as a primary source of metadata—something we had previously given up on.
 
-- Preprocessor
-- float, double and long double (x87 80-bit floating point numbers)
-- Bit-fields
-- alloca()
-- Variable-length arrays
-- Compound literals
-- Thread-local variables
-- Atomic variables
-- Common symbols
-- Designated initializers
-- L, u, U and u8 string literals
-- Functions that take or return structs as values, as specified by the
-  x86-64 SystemV ABI
+And this tool is designed to make that a reality.
+It is a compact tool created by removing the code generator from the chibicc source code and modifying it to output this information as JSON.
+It dumps the output of the tokenizer and parser as JSON.
 
-chibicc does not support complex numbers, K&R-style function prototypes
-and GCC-style inline assembly. Digraphs and trigraphs are intentionally
-left out.
+For example, given this minimal translation unit (`sample.c`):
 
-chibicc outputs a simple but nice error message when it finds an error in
-source code.
+```c
+int x;
+```
 
-There's no optimization pass. chibicc emits terrible code which is probably
-twice or more slower than GCC's output. I have a plan to add an
-optimization pass once the frontend is done.
+Running `chibicc-dumper --dump-tokens --dump-ast sample.c` produces:
 
-I'm using Ubuntu 20.04 for x86-64 as a development platform. I made a
-few small changes so that chibicc works on Ubuntu 18.04, Fedora 32 and
-Gentoo 2.6, but portability is not my goal at this moment. It may or
-may not work on systems other than Ubuntu 20.04.
+```json
+{
+  "types": [
+    {
+      "id": 1,
+      "kind": "TY_INT",
+      "size": 4,
+      "align": 4,
+      "isUnsigned": false,
+      "isAtomic": false,
+      "originTypeId": null,
+      "name": "x",
+      "nameToken": {
+        "file": "sample.c",
+        "line": 1,
+        "lexeme": "x"
+      }
+    }
+  ],
+  "tokens": [
+    {
+      "kind": "TK_IDENT",
+      "lexeme": "int",
+      "file": "sample.c",
+      "line": 1,
+      "atBol": true,
+      "hasSpace": false
+    },
+    {
+      "kind": "TK_IDENT",
+      "lexeme": "x",
+      "file": "sample.c",
+      "line": 1,
+      "atBol": false,
+      "hasSpace": true
+    },
+    {
+      "kind": "TK_PUNCT",
+      "lexeme": ";",
+      "file": "sample.c",
+      "line": 1,
+      "atBol": false,
+      "hasSpace": false
+    },
+    {
+      "kind": "TK_EOF",
+      "lexeme": "",
+      "file": "sample.c",
+      "line": 2,
+      "atBol": true,
+      "hasSpace": false
+    }
+  ],
+  "ast": {
+    "kind": "program",
+    "globals": [
+      {
+        "name": "x",
+        "typeId": 1,
+        "align": 4,
+        "isLocal": false,
+        "isFunction": false,
+        "isDefinition": true,
+        "isStatic": false,
+        "isTentative": true,
+        "isTls": false
+      }
+    ]
+  }
+}
+```
 
-## Internals
+It might also be useful simply as an aid to learning chibicc, helping you analyze what kinds of token sequences and ASTs are generated.
 
-chibicc consists of the following stages:
+### Clang can generate an AST
 
-- Tokenize: A tokenizer takes a string as an input, breaks it into a list
-  of tokens and returns them.
+However, it has been [officially stated that this output is not stable.](https://clang.llvm.org/doxygen/JSONNodeDumper_8h_source.html)
+On the other hand, chibicc is sufficiently stable, and neither its tokens nor its AST are likely to change.
 
-- Preprocess: A preprocessor takes as an input a list of tokens and output
-  a new list of macro-expanded tokens. It interprets preprocessor
-  directives while expanding macros.
+### Environment
 
-- Parse: A recursive descendent parser constructs abstract syntax trees
-  from the output of the preprocessor. It also adds a type to each AST
-  node.
+- Debian or Ubuntu DEB package distribution (native binary CLI; depends primarily on libc)
+- NPM package (CLI, library; no dependencies on other packages)
 
-- Codegen: A code generator emits an assembly text for given AST nodes.
+---
 
-## Contributing
+## Install
 
-When I find a bug in this compiler, I go back to the original commit that
-introduced the bug and rewrite the commit history as if there were no such
-bug from the beginning. This is an unusual way of fixing bugs, but as a
-part of a book, it is important to keep every commit bug-free.
+You can install it on your system using the [pre-built packages](https://github.com/kekyo/chibicc-dumper/releases),
 
-Thus, I do not take pull requests in this repo. You can send me a pull
-request if you find a bug, but it is very likely that I will read your
-patch and then apply that to my previous commits by rewriting history. I'll
-credit your name somewhere, but your changes will be rewritten by me before
-submitted to this repository.
+- Debian trixie, bookworm: amd64, i686, arm64, armv7l (32-bit), and riscv64
+- Ubuntu 24.04, 22.04: amd64 and arm64
 
-Also, please assume that I will occasionally force-push my local repository
-to this public one to rewrite history. If you clone this project and make
-local commits on top of it, your changes will have to be rebased by hand
-when I force-push new commits.
+Or, you can use the `chibicc-dumper` NPM package for TypeScript/JavaScript using WASM:
 
-## Design principles
+```bash
+npm install chibicc-dumper
+```
 
-chibicc's core value is its simplicity and the reability of its source
-code. To achieve this goal, I was careful not to be too clever when
-writing code. Let me explain what that means.
+The package also exposes the `chibicc-dumper` CLI command, so you can run it
+directly with `npx` or through your package manager's bin shim:
 
-Oftentimes, as you get used to the code base, you are tempted to
-_improve_ the code using more abstractions and clever tricks.
-But that kind of _improvements_ don't always improve readability for
-first-time readers and can actually hurts it. I tried to avoid the
-pitfall as much as possible. I wrote this code not for me but for
-first-time readers.
+```bash
+npx chibicc-dumper --dump-tokens --dump-ast sample.c
+```
 
-If you take a look at the source code, you'll find a couple of
-dumb-looking pieces of code. These are written intentionally that way
-(but at some places I might be actually missing something,
-though). Here is a few notable examples:
+Alternatively, build the tool with `make`:
 
-- The recursive descendent parser contains many similar-looking functions
-  for similar-looking generative grammar rules. You might be tempted
-  to _improve_ it to reduce the duplication using higher-order functions
-  or macros, but I thought that that's too complicated. It's better to
-  allow small duplications instead.
+```bash
+make
+```
 
-- chibicc doesn't try too hard to save memory. An entire input source
-  file is read to memory first before the tokenizer kicks in, for example.
+The executable is generated as `./chibicc-dumper`.
 
-- Slow algorithms are fine if we know that n isn't too big.
-  For example, we use a linked list as a set in the preprocessor, so
-  the membership check takes O(n) where n is the size of the set.  But
-  that's fine because we know n is usually very small.
-  And even if n can be very big, I stick with a simple slow algorithm
-  until it is proved by benchmarks that that's a bottleneck.
+## Usage
 
-- Each AST node type uses only a few members of the `Node` struct members.
-  Other unused `Node` members are just a waste of memory at runtime.
-  We could save memory using unions, but I decided to simply put everything
-  in the same struct instead. I believe the inefficiency is negligible.
-  Even if it matters, we can always change the code to use unions
-  at any time. I wanted to avoid premature optimization.
+### CLI
 
-- chibicc always allocates heap memory using `calloc`, which is a
-  variant of `malloc` that clears memory with zero. `calloc` is
-  slightly slower than `malloc`, but that should be neligible.
+```text
+chibicc-dumper [--dump-tokens] [--dump-ast] [ -E ] [ -M | -MD ] [ -o <path> ] <file>
+```
 
-- Last but not least, chibicc allocates memory using `calloc` but never
-  calls `free`. Allocated heap memory is not freed until the process exits.
-  I'm sure that this memory management policy (or lack thereof) looks
-  very odd, but it makes sense for short-lived programs such as compilers.
-  DMD, a compiler for the D programming language, uses the same memory
-  management scheme for the same reason, for example [1].
+The dumper accepts a single C translation unit as input.
 
-## About the Author
+- `--dump-tokens`
+  Dumps the raw phase 1 tokenizer output before preprocessing.
+- `--dump-ast`
+  Dumps the phase 2 parser output after preprocessing.
+- `--dump-tokens --dump-ast`
+  Emits one JSON document containing both views.
+- `-o <path>`
+  Writes the JSON output to a file instead of standard output.
 
-I'm Rui Ueyama. I'm the creator of [8cc](https://github.com/rui314/8cc),
-which is a hobby C compiler, and also the original creator of the current
-version of [LLVM lld](https://lld.llvm.org) linker, which is a
-production-quality linker used by various operating systems and large-scale
-build systems.
+Preprocessor-oriented options such as `-I`, `-idirafter`, `-include`, `-D`, `-U`,
+`-x c|none`, `-E`, and `-M*` are still supported because they are useful for
+front-end analysis.
 
-## References
+The npm package CLI uses the same command-line format:
 
-- [tcc](https://bellard.org/tcc/): A small C compiler written by Fabrice
-  Bellard. I learned a lot from this compiler, but the design of tcc and
-  chibicc are different. In particular, tcc is a one-pass compiler, while
-  chibicc is a multi-pass one.
+```sh
+npx chibicc-dumper --dump-ast sample.c
+```
 
-- [lcc](https://github.com/drh/lcc): Another small C compiler. The creators
-  wrote a [book](https://sites.google.com/site/lccretargetablecompiler/)
-  about the internals of lcc, which I found a good resource to see how a
-  compiler is implemented.
+### Examples
 
-- [An Incremental Approach to Compiler
-  Construction](http://scheme2006.cs.uchicago.edu/11-ghuloum.pdf)
+Dump raw tokens to standard output:
 
-- [Rob Pike's 5 Rules of Programming](https://users.ece.utexas.edu/~adnan/pike.html)
+```sh
+chibicc-dumper --dump-tokens sample.c
+```
 
-[1] https://www.drdobbs.com/cpp/increasing-compiler-speed-by-over-75/240158941
+Dump the parsed AST to a file:
 
-> DMD does memory allocation in a bit of a sneaky way. Since compilers
-> are short-lived programs, and speed is of the essence, DMD just
-> mallocs away, and never frees.
+```sh
+chibicc-dumper --dump-ast -o sample.ast.json sample.c
+```
+
+Dump both tokens and AST in one JSON document:
+
+```sh
+chibicc-dumper --dump-tokens --dump-ast -o sample.full.json sample.c
+```
+
+### TypeScript / JavaScript NPM package
+
+The packaged API embeds the WASM binary into the generated JavaScript bundle,
+so it does not need to fetch an external `.wasm` file at runtime. Each API call
+creates a fresh WASM instance, runs `chibicc-dumper`, and disposes that
+instance immediately after collecting the result.
+
+Use `dumpJson()` when you want the raw JSON text, or `dump()` when you want the
+parsed JavaScript object.
+
+```ts
+import { dump, dumpJson } from 'chibicc-dumper';
+
+const json = await dumpJson({
+  inputPath: 'main.c',
+  source: 'int main(void) { return 0; }\n',
+});
+
+const result = await dump({
+  inputPath: 'main.c',
+  source: 'int main(void) { return 0; }\n',
+});
+
+console.log(json);
+console.log(result.ast.kind);
+```
+
+Builtin headers bundled with `chibicc` are available automatically, so standard
+includes such as `#include <stddef.h>` work without extra setup.
+
+```ts
+import { dump } from 'chibicc-dumper';
+
+const result = await dump({
+  inputPath: 'main.c',
+  source: '#include <stddef.h>\nsize_t value;\n',
+});
+
+console.log(result.tokens[0].kind);
+```
+
+Project-specific files can be provided through the `files` option or through
+synchronous host callbacks. Virtual paths are normalized under `/workspace`, so
+`#include "foo.h"` from `main.c` resolves to `/workspace/foo.h`.
+
+```ts
+import { dump } from 'chibicc-dumper';
+
+const result = await dump({
+  inputPath: 'main.c',
+  source: '#include "foo.h"\nint main(void) { return VALUE; }\n',
+  host: {
+    readFile: (path) => {
+      if (path === '/workspace/foo.h') {
+        return '#define VALUE 7\n';
+      }
+      return undefined;
+    },
+  },
+});
+
+console.log(result.ast.globals[0].body.body[0].lhs.val);
+```
+
+The main options are:
+
+- `inputPath`: virtual path of the main translation unit.
+- `source`: contents of the main translation unit.
+- `files`: additional virtual files keyed by path.
+- `includePaths`: extra virtual include roots.
+- `dumpTokens`: include token data in the JSON output.
+- `dumpAst`: include AST data in the JSON output.
+- `host.readFile`: synchronously provide file contents for `#include`
+  resolution.
+- `host.getFileTimestamp`: override file timestamps used by the preprocessor.
+- `host.emitWarning`: receive non-fatal diagnostics from the runtime bridge.
+
+---
+
+## JSON structure
+
+The output is always a single JSON object. The top-level shape is:
+
+```json
+{
+  "types": [...],
+  "tokens": [...],
+  "ast": {
+    "kind": "program",
+    "globals": [...]
+  }
+}
+```
+
+`types` is always present. `tokens` is present only when `--dump-tokens` is
+requested, and `ast` is present only when `--dump-ast` is requested.
+
+Token entries contain lexical information such as token kind, source lexeme,
+source file, line number, beginning-of-line state, and whitespace information.
+Comment tokens (`TK_COMMENT`) additionally include `commentStyle`, `endLine`,
+and stripped comment `text`.
+For example:
+
+```json
+{
+  "types": [],
+  "tokens": [
+    {
+      "kind": "TK_IDENT",
+      "lexeme": "int",
+      "file": "sample.c",
+      "line": 1,
+      "atBol": true,
+      "hasSpace": false
+    },
+    {
+      "kind": "TK_PP_NUM",
+      "lexeme": "42",
+      "file": "sample.c",
+      "line": 1,
+      "atBol": false,
+      "hasSpace": true
+    }
+  ]
+}
+```
+
+AST output contains normalized type references through fields such as
+`typeId`, `baseTypeId`, and `returnTypeId`. Function definitions appear under
+`ast.globals`, and statement/expression nodes are nested under each function's
+`body`. Declaration-like entries such as globals/functions and struct or union
+members may also include `headerComments` when a leading comment block is
+detected. For example:
+
+```json
+{
+  "types": [
+    {
+      "id": 4,
+      "kind": "TY_FUNC",
+      "name": "main",
+      "returnTypeId": 5,
+      "paramTypeIds": [],
+      "isVariadic": false
+    },
+    {
+      "id": 5,
+      "kind": "TY_INT",
+      "size": 4,
+      "align": 4,
+      "isUnsigned": false,
+      "isAtomic": false,
+      "originTypeId": null
+    }
+  ],
+  "ast": {
+    "kind": "program",
+    "globals": [
+      {
+        "name": "main",
+        "typeId": 4,
+        "isFunction": true,
+        "body": {
+          "kind": "ND_BLOCK",
+          "body": [
+            {
+              "kind": "ND_RETURN",
+              "lhs": {
+                "kind": "ND_NUM",
+                "typeId": 5,
+                "value": 42
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
+```
+
+### Token variation
+
+| Token        | Details                                                           |
+| :----------- | :---------------------------------------------------------------- |
+| `TK_IDENT`   | Identifier token emitted by the tokenizer.                        |
+| `TK_PUNCT`   | Punctuation or operator token such as `(`, `)`, `+`, or `->`.     |
+| `TK_KEYWORD` | Reserved language keyword after keyword classification.           |
+| `TK_STR`     | String literal token with decoded string bytes and a string type. |
+| `TK_NUM`     | Numeric token after semantic number parsing.                      |
+| `TK_PP_NUM`  | Preprocessor-number token before final numeric interpretation.    |
+| `TK_COMMENT` | Line (`//`) or block (`/* ... */`) comment token.                 |
+| `TK_EOF`     | End-of-file sentinel token appended to every token stream.        |
+
+### AST node variation
+
+| Type         | Details                                                        |
+| :----------- | :------------------------------------------------------------- |
+| `TY_VOID`    | The `void` type.                                               |
+| `TY_BOOL`    | The `_Bool` type.                                              |
+| `TY_CHAR`    | The `char` type.                                               |
+| `TY_SHORT`   | The `short` type.                                              |
+| `TY_INT`     | The `int` type.                                                |
+| `TY_LONG`    | The `long` type.                                               |
+| `TY_FLOAT`   | The `float` type.                                              |
+| `TY_DOUBLE`  | The `double` type.                                             |
+| `TY_LDOUBLE` | The `long double` type.                                        |
+| `TY_ENUM`    | An enum type.                                                  |
+| `TY_PTR`     | A pointer type with `baseTypeId` pointing to the pointee type. |
+| `TY_FUNC`    | A function type with `returnTypeId` and `paramTypeIds`.        |
+| `TY_ARRAY`   | A fixed-size array type with `baseTypeId` and `arrayLen`.      |
+| `TY_VLA`     | A variable-length array type.                                  |
+| `TY_STRUCT`  | A struct type, including member layout metadata.               |
+| `TY_UNION`   | A union type, including member layout metadata.                |
+
+| Node           | Details                                                        |
+| :------------- | :------------------------------------------------------------- |
+| `ND_NULL_EXPR` | A no-op expression placeholder.                                |
+| `ND_ADD`       | Addition expression.                                           |
+| `ND_SUB`       | Subtraction expression.                                        |
+| `ND_MUL`       | Multiplication expression.                                     |
+| `ND_DIV`       | Division expression.                                           |
+| `ND_NEG`       | Unary minus expression.                                        |
+| `ND_MOD`       | Remainder expression.                                          |
+| `ND_BITAND`    | Bitwise AND expression.                                        |
+| `ND_BITOR`     | Bitwise OR expression.                                         |
+| `ND_BITXOR`    | Bitwise XOR expression.                                        |
+| `ND_SHL`       | Left-shift expression.                                         |
+| `ND_SHR`       | Right-shift expression.                                        |
+| `ND_EQ`        | Equality comparison expression.                                |
+| `ND_NE`        | Inequality comparison expression.                              |
+| `ND_LT`        | Less-than comparison expression.                               |
+| `ND_LE`        | Less-than-or-equal comparison expression.                      |
+| `ND_ASSIGN`    | Assignment expression.                                         |
+| `ND_COND`      | Ternary conditional (`?:`) expression.                         |
+| `ND_COMMA`     | Comma operator expression.                                     |
+| `ND_MEMBER`    | Struct or union member access.                                 |
+| `ND_ADDR`      | Address-of (`&`) expression.                                   |
+| `ND_DEREF`     | Pointer dereference (`*`) expression.                          |
+| `ND_NOT`       | Logical NOT expression.                                        |
+| `ND_BITNOT`    | Bitwise NOT expression.                                        |
+| `ND_LOGAND`    | Logical AND expression with short-circuit semantics.           |
+| `ND_LOGOR`     | Logical OR expression with short-circuit semantics.            |
+| `ND_RETURN`    | Return statement.                                              |
+| `ND_IF`        | `if` / `else` statement.                                       |
+| `ND_FOR`       | `for`-style loop node used for normalized loop forms.          |
+| `ND_DO`        | `do ... while` loop.                                           |
+| `ND_SWITCH`    | `switch` statement.                                            |
+| `ND_CASE`      | `case` or `default` label inside a switch.                     |
+| `ND_BLOCK`     | Compound statement containing a `body` list.                   |
+| `ND_GOTO`      | Direct `goto` statement.                                       |
+| `ND_GOTO_EXPR` | Computed goto expression.                                      |
+| `ND_LABEL`     | Labeled statement.                                             |
+| `ND_LABEL_VAL` | GNU label-address expression such as `&&label`.                |
+| `ND_FUNCALL`   | Function call expression.                                      |
+| `ND_EXPR_STMT` | Expression statement.                                          |
+| `ND_STMT_EXPR` | GNU statement-expression (`({ ... })`).                        |
+| `ND_VAR`       | Variable reference expression.                                 |
+| `ND_VLA_PTR`   | Internal node that references the storage backing a VLA.       |
+| `ND_NUM`       | Numeric literal expression.                                    |
+| `ND_CAST`      | Cast expression.                                               |
+| `ND_MEMZERO`   | Internal zero-fill helper inserted by initialization lowering. |
+| `ND_ASM`       | GNU inline assembly statement node.                            |
+| `ND_CAS`       | Atomic compare-and-swap helper node.                           |
+| `ND_EXCH`      | Atomic exchange helper node.                                   |
+
+---
+
+## Example: Converting JSON into TypeScript Type Expressions
+
+The emitted JSON can be used as source data for building TypeScript `type`
+expressions that mirror the shape of a C `struct`.
+This example focuses only on copying member names and member type shapes.
+It does not try to address exact memory layout compatibility, ABI concerns,
+padding, alignment, or the other details required for real FFI bindings.
+
+Start with a small C input.
+If you attach comments to struct members, and also to the declaration that uses
+the struct, you can later read those comments back as hints.
+
+```c
+struct Point {
+  /* ffi:i32 */
+  int x;
+  /* ffi:u16 */
+  unsigned short y;
+};
+
+/* ffi:type:Point */
+struct Point global_point;
+```
+
+When you dump this with `--dump-ast`, you get JSON roughly like this.
+The important points are:
+
+- The struct itself appears as a `TY_STRUCT` entry in the `types` array.
+- Member enumeration comes from `types[*].members`.
+- To find which struct to use, follow `ast.globals[*].typeId` to `types[*].id`.
+
+Rather than searching for a specific `struct` by name directly, it is often
+easier to first find a declaration that uses that type, such as a global
+variable or function parameter, and then start from its `typeId`.
+
+```json
+{
+  "types": [
+    {
+      "id": 1,
+      "kind": "TY_STRUCT",
+      "members": [
+        {
+          "name": "x",
+          "typeId": 2,
+          "headerComments": [
+            {
+              "style": "block",
+              "text": " ffi:i32 "
+            }
+          ],
+          "offset": 0,
+          "align": 4,
+          "index": 0,
+          "isBitfield": false,
+          "bitOffset": 0,
+          "bitWidth": 0
+        },
+        {
+          "name": "y",
+          "typeId": 3,
+          "headerComments": [
+            {
+              "style": "block",
+              "text": " ffi:u16 "
+            }
+          ],
+          "offset": 4,
+          "align": 2,
+          "index": 1,
+          "isBitfield": false,
+          "bitOffset": 0,
+          "bitWidth": 0
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "TY_INT",
+      "isUnsigned": false
+    },
+    {
+      "id": 3,
+      "kind": "TY_SHORT",
+      "isUnsigned": true
+    }
+  ],
+  "ast": {
+    "globals": [
+      {
+        "name": "global_point",
+        "typeId": 1,
+        "headerComments": [
+          {
+            "style": "block",
+            "text": " ffi:type:Point "
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The following minimal example reads that JSON and emits TypeScript bindings such
+as `type Point = { ... }`.
+Because `typeId` is a reference ID rather than an array index, it is safest to
+build a `Map` first.
+
+```ts
+import { dumpJson } from 'chibicc-dumper';
+
+interface DumpHeaderComment {
+  readonly text: string;
+}
+
+interface DumpMember {
+  readonly name: string | null;
+  readonly typeId: number;
+  readonly headerComments?: readonly DumpHeaderComment[];
+}
+
+interface DumpType {
+  readonly id: number;
+  readonly kind: string;
+  readonly isUnsigned?: boolean;
+  readonly baseTypeId?: number;
+  readonly members?: readonly DumpMember[];
+}
+
+interface DumpGlobal {
+  readonly name: string;
+  readonly typeId: number;
+  readonly headerComments?: readonly DumpHeaderComment[];
+}
+
+interface DumpResult {
+  readonly types: readonly DumpType[];
+  readonly ast?: {
+    readonly globals: readonly DumpGlobal[];
+  };
+}
+
+const scalarKinds = new Set([
+  'TY_CHAR',
+  'TY_SHORT',
+  'TY_INT',
+  'TY_LONG',
+  'TY_FLOAT',
+  'TY_DOUBLE',
+  'TY_LDOUBLE',
+  'TY_ENUM',
+]);
+
+const findFfiAnnotation = (
+  comments: readonly DumpHeaderComment[] | undefined
+): string | undefined =>
+  comments
+    ?.map((comment) => comment.text.trim())
+    .find((text) => text.startsWith('ffi:'));
+
+const renderStructLiteral = (
+  members: readonly DumpMember[],
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number>
+): string => {
+  const lines = members.map((member) => {
+    if (member.name === null) {
+      throw new Error('Anonymous members need custom handling.');
+    }
+
+    const annotation = findFfiAnnotation(member.headerComments);
+    const annotationLine = annotation ? `  /** ${annotation} */\n` : '';
+    return `${annotationLine}  ${member.name}: ${renderType(member.typeId, typeById, seen)};`;
+  });
+
+  return `{\n${lines.join('\n')}\n}`;
+};
+
+const renderExampleObjectLiteral = (
+  members: readonly DumpMember[],
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number>
+): string => {
+  const lines = members.map((member) => {
+    if (member.name === null) {
+      throw new Error('Anonymous members need custom handling.');
+    }
+
+    return `  ${member.name}: ${renderExampleValue(member.typeId, typeById, seen)},`;
+  });
+
+  return `{\n${lines.join('\n')}\n}`;
+};
+
+const renderType = (
+  typeId: number,
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number> = new Set()
+): string => {
+  const ty = typeById.get(typeId);
+  if (!ty) {
+    throw new Error(`Unknown typeId: ${typeId}`);
+  }
+
+  if (scalarKinds.has(ty.kind)) {
+    return 'number';
+  }
+
+  switch (ty.kind) {
+    case 'TY_BOOL':
+      return 'boolean';
+    case 'TY_PTR':
+      return 'number';
+    case 'TY_ARRAY':
+      if (ty.baseTypeId === undefined) {
+        throw new Error(`TY_ARRAY ${typeId} has no baseTypeId.`);
+      }
+      return `${renderType(ty.baseTypeId, typeById, seen)}[]`;
+    case 'TY_STRUCT':
+    case 'TY_UNION':
+      if (!ty.members) {
+        throw new Error(`${ty.kind} ${typeId} has no members.`);
+      }
+      if (seen.has(typeId)) {
+        return '{ /* recursive */ }';
+      }
+      return renderStructLiteral(
+        ty.members,
+        typeById,
+        new Set([...seen, typeId])
+      );
+    default:
+      return 'unknown';
+  }
+};
+
+const renderExampleValue = (
+  typeId: number,
+  typeById: ReadonlyMap<number, DumpType>,
+  seen: ReadonlySet<number> = new Set()
+): string => {
+  const ty = typeById.get(typeId);
+  if (!ty) {
+    throw new Error(`Unknown typeId: ${typeId}`);
+  }
+
+  if (scalarKinds.has(ty.kind)) {
+    return '0';
+  }
+
+  switch (ty.kind) {
+    case 'TY_BOOL':
+      return 'false';
+    case 'TY_PTR':
+      return '0';
+    case 'TY_ARRAY':
+      return '[]';
+    case 'TY_STRUCT':
+    case 'TY_UNION':
+      if (!ty.members) {
+        throw new Error(`${ty.kind} ${typeId} has no members.`);
+      }
+      if (seen.has(typeId)) {
+        return '{}';
+      }
+      return renderExampleObjectLiteral(
+        ty.members,
+        typeById,
+        new Set([...seen, typeId])
+      );
+    default:
+      return 'undefined as never';
+  }
+};
+
+const generatePointBindings = async (): Promise<string> => {
+  const dumpText = await dumpJson({
+    inputPath: 'point.c',
+    source: `
+struct Point {
+  /* ffi:i32 */
+  int x;
+  /* ffi:u16 */
+  unsigned short y;
+};
+
+/* ffi:type:Point */
+struct Point global_point;
+`.trimStart(),
+    dumpTokens: false,
+    dumpAst: true,
+  });
+
+  const result = JSON.parse(dumpText) as DumpResult;
+  const typeById = new Map(result.types.map((ty) => [ty.id, ty]));
+
+  const target = result.ast?.globals.find(
+    (global) => global.name === 'global_point'
+  );
+  if (!target) {
+    throw new Error('global_point not found.');
+  }
+
+  const aliasName =
+    findFfiAnnotation(target.headerComments)?.replace(/^ffi:type:/, '') ??
+    'GeneratedType';
+
+  return [
+    `type ${aliasName} = ${renderType(target.typeId, typeById)};`,
+    `const ${target.name}: ${aliasName} = ${renderExampleValue(target.typeId, typeById)};`,
+  ].join('\n\n');
+};
+
+console.log(await generatePointBindings());
+```
+
+The output looks like this:
+
+```ts
+type Point = {
+  /** ffi:i32 */
+  x: number;
+  /** ffi:u16 */
+  y: number;
+};
+
+const global_point: Point = {
+  x: 0,
+  y: 0,
+};
+```
+
+The key implementation points in this example are:
+
+- Identify the struct by starting from a declaration node such as
+  `ast.globals`, taking its `typeId`, and resolving that ID in `types`.
+- Enumerate members from the `members` array of a `TY_STRUCT` or `TY_UNION`.
+- Determine each member type by resolving `member.typeId` in `types` and
+  checking fields such as `kind`, `isUnsigned`, and `baseTypeId`.
+- If simple scalar coverage is enough, mapping `TY_INT` and `TY_SHORT` to
+  `number`, and `TY_BOOL` to `boolean`, is already useful.
+- If you also want a value-side skeleton, you can reuse the same type walk to
+  generate defaults such as `0`, `false`, `[]`, and `{ ... }`, which is enough
+  to emit `const global_point: Point = { ... }`.
+- Nested structs can be handled by recursively following `TY_STRUCT` /
+  `TY_UNION`. If you want separate named `type` aliases, add a naming rule for
+  recursive expansion.
+- Pointers appear as `TY_PTR`. If you only want to mirror JSON shape, you can
+  map them to `number` or a custom alias such as `Pointer<T>`, but real FFI use
+  needs additional design.
+- Fixed-size arrays can be converted from `TY_ARRAY` plus `baseTypeId` and
+  `arrayLen` into `T[]` or tuple-like forms.
+- Comments can be read back from `headerComments` on globals/functions and
+  struct/union members. Strings such as `ffi:type:Point` or `ffi:u16` can serve
+  as future hints for FFI conversion or other custom annotations.
+
+---
+
+## License
+
+Under MIT.
+
+## About original chibicc
+
+[Read the original README for chibicc](./README_chibicc.md).
