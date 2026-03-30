@@ -17,16 +17,22 @@ void strarray_push(StringArray *arr, char *s) {
 }
 
 // Takes a printf-style format string and returns a formatted string.
-char *format(char *fmt, ...) {
-  char *buf;
-  size_t buflen;
-  FILE *out = open_memstream(&buf, &buflen);
+char *vformat(char *fmt, va_list ap) {
+  va_list ap2;
+  va_copy(ap2, ap);
+  int len = vsnprintf(NULL, 0, fmt, ap2);
+  va_end(ap2);
 
+  char *buf = calloc(1, len + 1);
+  vsnprintf(buf, len + 1, fmt, ap);
+  return buf;
+}
+
+char *format(char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  vfprintf(out, fmt, ap);
+  char *buf = vformat(fmt, ap);
   va_end(ap);
-  fclose(out);
   return buf;
 }
 

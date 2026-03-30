@@ -39,18 +39,6 @@ static bool take_arg(char *arg) {
   return false;
 }
 
-static char *resolve_executable_path(char *argv0) {
-#ifdef __linux__
-  char buf[4096];
-  ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-  if (len > 0) {
-    buf[len] = '\0';
-    return strdup(buf);
-  }
-#endif
-  return strdup(argv0);
-}
-
 static char *default_multiarch_include_path(void) {
 #if defined(__x86_64__)
   return "/usr/include/x86_64-linux-gnu";
@@ -68,7 +56,7 @@ static char *default_multiarch_include_path(void) {
 }
 
 static void add_default_include_paths(char *argv0) {
-  char *self_path = resolve_executable_path(argv0);
+  char *self_path = chibicc_resolve_executable_path(argv0);
   char *multiarch_include = default_multiarch_include_path();
 
   // Use the real executable path so packaged symlinks still resolve the
@@ -312,12 +300,6 @@ static char *replace_extn(char *tmpl, char *extn) {
   return format("%s%s", filename, extn);
 }
 
-// Returns true if a given file exists.
-bool file_exists(char *path) {
-  struct stat st;
-  return !stat(path, &st);
-}
-
 // Print tokens to stdout. Used for -E.
 static void print_tokens(Token *tok) {
   FILE *out = open_file(output_file ? output_file : "-");
@@ -473,4 +455,22 @@ int chibicc_driver_main(int argc, char **argv) {
 
   cc1();
   return 0;
+}
+
+bool chibicc_driver_try_main(int argc, char **argv, int *status,
+                             char **error_message) {
+  ChibiccErrorContext ctx;
+  chibicc_begin_error_capture(&ctx);
+
+  if (setjmp(ctx.env) == 0) {
+    *status = chibicc_driver_main(argc, argv);
+    *error_message = NULL;
+    chibicc_end_error_capture();
+    return true;
+  }
+
+  *status = 1;
+  *error_message = ctx.message;
+  chibicc_end_error_capture();
+  return false;
 }

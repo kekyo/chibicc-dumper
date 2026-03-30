@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <glob.h>
 #include <libgen.h>
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -42,6 +43,7 @@ typedef struct {
 } StringArray;
 
 void strarray_push(StringArray *arr, char *s);
+char *vformat(char *fmt, va_list ap) __attribute__((format(printf, 1, 0)));
 char *format(char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
 //
@@ -447,10 +449,87 @@ void hashmap_delete2(HashMap *map, char *key, int keylen);
 void hashmap_test(void);
 
 //
-// main.c
+// host.c
 //
 
+typedef struct ChibiccHost ChibiccHost;
+typedef struct ChibiccErrorContext ChibiccErrorContext;
+
+struct ChibiccHost {
+  bool (*file_exists)(char *path);
+  char *(*read_file)(char *path);
+  bool (*get_file_timestamp)(char *path, time_t *result);
+  char *(*resolve_executable_path)(char *argv0);
+  void (*emit_warning)(char *message);
+};
+
+struct ChibiccErrorContext {
+  jmp_buf env;
+  char *message;
+};
+
+/**
+ * @brief Restores the native filesystem-backed host implementation.
+ */
+void chibicc_use_default_host(void);
+
+/**
+ * @brief Overrides the current host implementation.
+ * @param host Host callbacks to use for subsequent operations.
+ */
+void chibicc_set_host(ChibiccHost *host);
+
+/**
+ * @brief Reads a source file through the active host.
+ * @param path Source path.
+ * @return Newly allocated contents terminated with `\n\0`, or `NULL` on failure.
+ */
+char *chibicc_read_file(char *path);
+
+/**
+ * @brief Checks whether a path exists through the active host.
+ * @param path Path to check.
+ * @return `true` if the path exists.
+ */
 bool file_exists(char *path);
+
+/**
+ * @brief Retrieves a file timestamp through the active host.
+ * @param path Source path.
+ * @param result Receives the timestamp on success.
+ * @return `true` if the timestamp could be retrieved.
+ */
+bool chibicc_get_file_timestamp(char *path, time_t *result);
+
+/**
+ * @brief Resolves the executable path through the active host.
+ * @param argv0 Original argv[0] value.
+ * @return Newly allocated executable path string.
+ */
+char *chibicc_resolve_executable_path(char *argv0);
+
+/**
+ * @brief Starts capture mode for fatal compiler diagnostics.
+ * @param ctx Capture context that receives the message on failure.
+ */
+void chibicc_begin_error_capture(ChibiccErrorContext *ctx);
+
+/**
+ * @brief Ends fatal compiler diagnostic capture.
+ */
+void chibicc_end_error_capture(void);
+
+/**
+ * @brief Reports a fatal compiler diagnostic.
+ * @param message Diagnostic message.
+ */
+noreturn void chibicc_fatal(char *message);
+
+/**
+ * @brief Reports a non-fatal compiler diagnostic.
+ * @param message Diagnostic message.
+ */
+void chibicc_warn(char *message);
 
 extern StringArray include_paths;
 extern char *base_file;

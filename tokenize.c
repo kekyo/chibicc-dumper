@@ -12,21 +12,21 @@ static bool at_bol;
 // True if the current position follows a space character
 static bool has_space;
 
-// Reports an error and exit.
+// Reports an error and exits through the active host.
 void error(char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  vfprintf(stderr, fmt, ap);
-  fprintf(stderr, "\n");
-  exit(1);
+  char *message = vformat(fmt, ap);
+  va_end(ap);
+  chibicc_fatal(message);
 }
 
 // Reports an error message in the following format.
 //
 // foo.c:10: x = y + 1;
 //               ^ <error message here>
-static void verror_at(char *filename, char *input, int line_no,
-                      char *loc, char *fmt, va_list ap) {
+static char *verror_at(char *filename, char *input, int line_no,
+                       char *loc, char *fmt, va_list ap) {
   // Find a line containing `loc`.
   char *line = loc;
   while (input < line && line[-1] != '\n')
@@ -36,17 +36,12 @@ static void verror_at(char *filename, char *input, int line_no,
   while (*end && *end != '\n')
     end++;
 
-  // Print out the line.
-  int indent = fprintf(stderr, "%s:%d: ", filename, line_no);
-  fprintf(stderr, "%.*s\n", (int)(end - line), line);
-
-  // Show the error message.
-  int pos = display_width(line, loc - line) + indent;
-
-  fprintf(stderr, "%*s", pos, ""); // print pos spaces.
-  fprintf(stderr, "^ ");
-  vfprintf(stderr, fmt, ap);
-  fprintf(stderr, "\n");
+  char *detail = vformat(fmt, ap);
+  char line_no_buf[32];
+  int indent = snprintf(line_no_buf, sizeof(line_no_buf), "%d", line_no) + 3;
+  int pos = display_width(line, loc - line) + (int)strlen(filename) + indent;
+  return format("%s:%d: %.*s\n%*s^ %s",
+                filename, line_no, (int)(end - line), line, pos, "", detail);
 }
 
 void error_at(char *loc, char *fmt, ...) {
@@ -57,22 +52,28 @@ void error_at(char *loc, char *fmt, ...) {
 
   va_list ap;
   va_start(ap, fmt);
-  verror_at(current_file->name, current_file->contents, line_no, loc, fmt, ap);
-  exit(1);
+  char *message = verror_at(current_file->name, current_file->contents,
+                            line_no, loc, fmt, ap);
+  va_end(ap);
+  chibicc_fatal(message);
 }
 
 void error_tok(Token *tok, char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  verror_at(tok->file->name, tok->file->contents, tok->line_no, tok->loc, fmt, ap);
-  exit(1);
+  char *message = verror_at(tok->file->name, tok->file->contents,
+                            tok->line_no, tok->loc, fmt, ap);
+  va_end(ap);
+  chibicc_fatal(message);
 }
 
 void warn_tok(Token *tok, char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  verror_at(tok->file->name, tok->file->contents, tok->line_no, tok->loc, fmt, ap);
+  char *message = verror_at(tok->file->name, tok->file->contents,
+                            tok->line_no, tok->loc, fmt, ap);
   va_end(ap);
+  chibicc_warn(message);
 }
 
 // Consumes the current token if it matches `op`.
@@ -636,44 +637,6 @@ Token *tokenize(File *file) {
   return head.next;
 }
 
-// Returns the contents of a given file.
-static char *read_file(char *path) {
-  FILE *fp;
-
-  if (strcmp(path, "-") == 0) {
-    // By convention, read from stdin if a given filename is "-".
-    fp = stdin;
-  } else {
-    fp = fopen(path, "r");
-    if (!fp)
-      return NULL;
-  }
-
-  char *buf;
-  size_t buflen;
-  FILE *out = open_memstream(&buf, &buflen);
-
-  // Read the entire file.
-  for (;;) {
-    char buf2[4096];
-    int n = fread(buf2, 1, sizeof(buf2), fp);
-    if (n == 0)
-      break;
-    fwrite(buf2, 1, n, out);
-  }
-
-  if (fp != stdin)
-    fclose(fp);
-
-  // Make sure that the last line is properly terminated with '\n'.
-  fflush(out);
-  if (buflen == 0 || buf[buflen - 1] != '\n')
-    fputc('\n', out);
-  fputc('\0', out);
-  fclose(out);
-  return buf;
-}
-
 File **get_input_files(void) {
   return input_files;
 }
@@ -776,7 +739,7 @@ static void convert_universal_chars(char *p) {
 }
 
 Token *tokenize_file(char *path) {
-  char *p = read_file(path);
+  char *p = chibicc_read_file(path);
   if (!p)
     return NULL;
 

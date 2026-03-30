@@ -1028,12 +1028,12 @@ static Token *counter_macro(Token *tmpl) {
 // modification time of the current file. E.g.
 // "Fri Jul 24 01:32:50 2020"
 static Token *timestamp_macro(Token *tmpl) {
-  struct stat st;
-  if (stat(tmpl->file->name, &st) != 0)
+  time_t timestamp;
+  if (!chibicc_get_file_timestamp(tmpl->file->name, &timestamp))
     return new_str_token("??? ??? ?? ??:??:?? ????", tmpl);
 
   char buf[30];
-  ctime_r(&st.st_mtime, buf);
+  ctime_r(&timestamp, buf);
   buf[24] = '\0';
   return new_str_token(buf, tmpl);
 }
