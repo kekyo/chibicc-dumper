@@ -36,6 +36,8 @@ struct Scope {
   // the other is for struct/union/enum tags.
   HashMap vars;
   HashMap tags;
+  int id;
+  ParsedScopeKind kind;
 };
 
 // Variable attributes such as typedef or extern.
@@ -87,7 +89,13 @@ static Obj *locals;
 // Likewise, global variables are accumulated to this list.
 static Obj *globals;
 
-static Scope *scope = &(Scope){};
+static Scope root_scope;
+static Scope *scope = &root_scope;
+static ParseMetadata parse_metadata;
+static int scope_cap;
+static int typedef_cap;
+static int tag_cap;
+static int next_scope_id;
 
 // Points to the function object the parser is currently parsing.
 static Obj *current_fn;
@@ -105,6 +113,89 @@ static char *cont_label;
 static Node *current_switch;
 
 static Obj *builtin_alloca;
+static char *get_ident(Token *tok);
+
+static void ensure_scope_capacity(void) {
+  if (parse_metadata.scope_len == scope_cap) {
+    scope_cap = scope_cap ? scope_cap * 2 : 16;
+    parse_metadata.scopes =
+      realloc(parse_metadata.scopes, sizeof(ParsedScopeInfo) * scope_cap);
+  }
+}
+
+static void ensure_typedef_capacity(void) {
+  if (parse_metadata.typedef_len == typedef_cap) {
+    typedef_cap = typedef_cap ? typedef_cap * 2 : 16;
+    parse_metadata.typedefs =
+      realloc(parse_metadata.typedefs, sizeof(ParsedTypedefInfo) * typedef_cap);
+  }
+}
+
+static void ensure_tag_capacity(void) {
+  if (parse_metadata.tag_len == tag_cap) {
+    tag_cap = tag_cap ? tag_cap * 2 : 16;
+    parse_metadata.tags =
+      realloc(parse_metadata.tags, sizeof(ParsedTagInfo) * tag_cap);
+  }
+}
+
+static int record_scope(ParsedScopeKind kind, int parent_scope_id) {
+  ensure_scope_capacity();
+  int id = ++next_scope_id;
+  parse_metadata.scopes[parse_metadata.scope_len++] = (ParsedScopeInfo){
+    .id = id,
+    .parent_scope_id = parent_scope_id,
+    .kind = kind,
+  };
+  return id;
+}
+
+static void record_typedef(Token *tok, Type *ty) {
+  if (!tok || !ty)
+    return;
+
+  ensure_typedef_capacity();
+  parse_metadata.typedefs[parse_metadata.typedef_len++] = (ParsedTypedefInfo){
+    .name = get_ident(tok),
+    .tok = tok,
+    .ty = ty,
+    .scope_id = scope->id,
+  };
+}
+
+static void record_tag(Token *tok, Type *ty, bool is_definition) {
+  if (!tok || !ty)
+    return;
+
+  if (!ty->tag)
+    ty->tag = tok;
+
+  ensure_tag_capacity();
+  parse_metadata.tags[parse_metadata.tag_len++] = (ParsedTagInfo){
+    .name = get_ident(tok),
+    .tok = tok,
+    .ty = ty,
+    .scope_id = scope->id,
+    .is_definition = is_definition,
+  };
+}
+
+static void reset_parse_metadata(void) {
+  free(parse_metadata.scopes);
+  free(parse_metadata.typedefs);
+  free(parse_metadata.tags);
+
+  parse_metadata = (ParseMetadata){};
+  scope_cap = 0;
+  typedef_cap = 0;
+  tag_cap = 0;
+  next_scope_id = 0;
+
+  root_scope = (Scope){};
+  root_scope.kind = PARSED_SCOPE_TRANSLATION_UNIT;
+  root_scope.id = record_scope(PARSED_SCOPE_TRANSLATION_UNIT, 0);
+  scope = &root_scope;
+}
 
 static bool is_typename(Token *tok);
 static Type *declspec(Token **rest, Token *tok, VarAttr *attr);
@@ -161,9 +252,15 @@ static int align_down(int n, int align) {
   return align_to(n - align + 1, align);
 }
 
-static void enter_scope(void) {
+const ParseMetadata *get_parse_metadata(void) {
+  return &parse_metadata;
+}
+
+static void enter_scope(ParsedScopeKind kind) {
   Scope *sc = calloc(1, sizeof(Scope));
   sc->next = scope;
+  sc->kind = kind;
+  sc->id = record_scope(kind, scope ? scope->id : 0);
   scope = sc;
 }
 
@@ -769,6 +866,9 @@ static Type *enum_specifier(Token **rest, Token *tok) {
     return ty;
   }
 
+  if (tag)
+    ty->tag = tag;
+
   tok = skip(tok, "{");
 
   // Read an enum-list.
@@ -789,8 +889,10 @@ static Type *enum_specifier(Token **rest, Token *tok) {
     sc->enum_val = val++;
   }
 
-  if (tag)
+  if (tag) {
     push_tag_scope(tag, ty);
+    record_tag(tag, ty, true);
+  }
   return ty;
 }
 
@@ -1637,7 +1739,7 @@ static Node *stmt(Token **rest, Token *tok) {
     Node *node = new_node(ND_FOR, tok);
     tok = skip(tok->next, "(");
 
-    enter_scope();
+    enter_scope(PARSED_SCOPE_BLOCK);
 
     char *brk = brk_label;
     char *cont = cont_label;
@@ -1766,7 +1868,7 @@ static Node *compound_stmt(Token **rest, Token *tok) {
   Node head = {};
   Node *cur = &head;
 
-  enter_scope();
+  enter_scope(PARSED_SCOPE_BLOCK);
 
   while (!equal(tok, "}")) {
     if (is_typename(tok) && !equal(tok->next, ":")) {
@@ -2653,10 +2755,15 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
     if (ty2)
       return ty2;
 
+    ty->tag = tag;
     ty->size = -1;
     push_tag_scope(tag, ty);
+    record_tag(tag, ty, false);
     return ty;
   }
+
+  if (tag)
+    ty->tag = tag;
 
   tok = skip(tok, "{");
 
@@ -2670,10 +2777,12 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
     Type *ty2 = hashmap_get2(&scope->tags, tag->loc, tag->len);
     if (ty2) {
       *ty2 = *ty;
+      record_tag(tag, ty2, true);
       return ty2;
     }
 
     push_tag_scope(tag, ty);
+    record_tag(tag, ty, true);
   }
 
   return ty;
@@ -3144,6 +3253,7 @@ static Token *parse_typedef(Token *tok, Type *basety) {
     if (!ty->name)
       error_tok(ty->name_pos, "typedef name omitted");
     push_scope(get_ident(ty->name))->type_def = ty;
+    record_typedef(ty->name, ty);
   }
   return tok;
 }
@@ -3234,7 +3344,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr, Token *decl_tok)
 
   current_fn = fn;
   locals = NULL;
-  enter_scope();
+  enter_scope(PARSED_SCOPE_FUNCTION);
   create_param_lvars(ty->params);
 
   // A buffer for a struct/union return value is passed
@@ -3344,6 +3454,7 @@ static void declare_builtin_functions(void) {
 
 // program = (typedef | function-definition | global-variable)*
 Obj *parse(Token *tok) {
+  reset_parse_metadata();
   declare_builtin_functions();
   globals = NULL;
 

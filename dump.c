@@ -29,6 +29,18 @@ static int register_type(DumpContext *ctx, Type *ty);
 static void gather_node(DumpContext *ctx, Node *node);
 static void dump_node_json(FILE *out, DumpContext *ctx, Node *node);
 
+static char *parsed_scope_kind_name(ParsedScopeKind kind) {
+  switch (kind) {
+  case PARSED_SCOPE_TRANSLATION_UNIT:
+    return "translation-unit";
+  case PARSED_SCOPE_FUNCTION:
+    return "function";
+  case PARSED_SCOPE_BLOCK:
+    return "block";
+  }
+  return "unknown";
+}
+
 static void typearray_push(TypeArray *arr, Type *ty) {
   if (arr->len == arr->cap) {
     arr->cap = arr->cap ? arr->cap * 2 : 16;
@@ -615,6 +627,17 @@ static void gather_tokens(DumpContext *ctx, Token *tok) {
     register_type(ctx, tok->ty);
 }
 
+static void gather_parse_metadata(DumpContext *ctx, const ParseMetadata *meta) {
+  if (!meta)
+    return;
+
+  for (int i = 0; i < meta->typedef_len; i++)
+    register_type(ctx, meta->typedefs[i].ty);
+
+  for (int i = 0; i < meta->tag_len; i++)
+    register_type(ctx, meta->tags[i].ty);
+}
+
 static void dump_type_ref(FILE *out, DumpContext *ctx, Type *ty) {
   int id = register_type(ctx, ty);
   if (!id) {
@@ -757,6 +780,14 @@ static void dump_type_json(FILE *out, DumpContext *ctx, Type *ty, int id) {
   if (ty->name_pos) {
     json_key(out, &first, "nameToken");
     dump_token_ref(out, ty->name_pos);
+  }
+
+  if (ty->tag) {
+    json_key(out, &first, "tag");
+    json_string_len(out, ty->tag->loc, ty->tag->len);
+
+    json_key(out, &first, "tagToken");
+    dump_token_ref(out, ty->tag);
   }
 
   switch (ty->kind) {
@@ -1103,6 +1134,96 @@ static void dump_types_json(FILE *out, DumpContext *ctx) {
   fputc(']', out);
 }
 
+static void dump_scope_json(FILE *out, ParsedScopeInfo *scope) {
+  bool first = true;
+  fputc('{', out);
+
+  json_key(out, &first, "id");
+  fprintf(out, "%d", scope->id);
+
+  json_key(out, &first, "parentScopeId");
+  if (scope->parent_scope_id)
+    fprintf(out, "%d", scope->parent_scope_id);
+  else
+    fputs("null", out);
+
+  json_key(out, &first, "kind");
+  json_string(out, parsed_scope_kind_name(scope->kind));
+
+  fputc('}', out);
+}
+
+static void dump_scopes_json(FILE *out, const ParseMetadata *meta) {
+  fputc('[', out);
+  for (int i = 0; i < meta->scope_len; i++) {
+    if (i)
+      fputc(',', out);
+    dump_scope_json(out, &meta->scopes[i]);
+  }
+  fputc(']', out);
+}
+
+static void dump_typedef_json(FILE *out, DumpContext *ctx, ParsedTypedefInfo *entry) {
+  bool first = true;
+  fputc('{', out);
+
+  json_key(out, &first, "name");
+  json_string(out, entry->name);
+
+  json_key(out, &first, "typeId");
+  dump_type_ref(out, ctx, entry->ty);
+
+  json_key(out, &first, "scopeId");
+  fprintf(out, "%d", entry->scope_id);
+
+  json_key(out, &first, "token");
+  dump_token_ref(out, entry->tok);
+
+  fputc('}', out);
+}
+
+static void dump_typedefs_json(FILE *out, DumpContext *ctx, const ParseMetadata *meta) {
+  fputc('[', out);
+  for (int i = 0; i < meta->typedef_len; i++) {
+    if (i)
+      fputc(',', out);
+    dump_typedef_json(out, ctx, &meta->typedefs[i]);
+  }
+  fputc(']', out);
+}
+
+static void dump_tag_json(FILE *out, DumpContext *ctx, ParsedTagInfo *entry) {
+  bool first = true;
+  fputc('{', out);
+
+  json_key(out, &first, "name");
+  json_string(out, entry->name);
+
+  json_key(out, &first, "typeId");
+  dump_type_ref(out, ctx, entry->ty);
+
+  json_key(out, &first, "scopeId");
+  fprintf(out, "%d", entry->scope_id);
+
+  json_key(out, &first, "token");
+  dump_token_ref(out, entry->tok);
+
+  json_key(out, &first, "isDefinition");
+  json_bool(out, entry->is_definition);
+
+  fputc('}', out);
+}
+
+static void dump_tags_json(FILE *out, DumpContext *ctx, const ParseMetadata *meta) {
+  fputc('[', out);
+  for (int i = 0; i < meta->tag_len; i++) {
+    if (i)
+      fputc(',', out);
+    dump_tag_json(out, ctx, &meta->tags[i]);
+  }
+  fputc(']', out);
+}
+
 static void dump_token_json(FILE *out, DumpContext *ctx, Token *tok) {
   bool first = true;
   fputc('{', out);
@@ -1180,12 +1301,15 @@ static void dump_tokens_json(FILE *out, DumpContext *ctx, Token *tok) {
 void dump_translation_unit_json(Token *tok, Obj *prog, bool dump_tokens,
                                 bool dump_ast, FILE *out) {
   DumpContext ctx = {};
+  const ParseMetadata *meta = dump_ast ? get_parse_metadata() : NULL;
   ctx.raw_tok = tok;
 
   if (dump_tokens)
     gather_tokens(&ctx, tok);
-  if (dump_ast)
+  if (dump_ast) {
     gather_obj_list(&ctx, prog);
+    gather_parse_metadata(&ctx, meta);
+  }
 
   bool first = true;
   fputc('{', out);
@@ -1203,6 +1327,15 @@ void dump_translation_unit_json(Token *tok, Obj *prog, bool dump_tokens,
     fputs("{\"kind\":\"program\",\"globals\":", out);
     dump_obj_list_json(out, &ctx, prog, false);
     fputc('}', out);
+
+    json_key(out, &first, "scopes");
+    dump_scopes_json(out, meta);
+
+    json_key(out, &first, "tags");
+    dump_tags_json(out, &ctx, meta);
+
+    json_key(out, &first, "typedefs");
+    dump_typedefs_json(out, &ctx, meta);
   }
 
   fputs("}\n", out);

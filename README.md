@@ -291,12 +291,16 @@ The output is always a single JSON object. The top-level shape is:
   "ast": {
     "kind": "program",
     "globals": [...]
-  }
+  },
+  "scopes": [...],
+  "tags": [...],
+  "typedefs": [...]
 }
 ```
 
 `types` is always present. `tokens` is present only when `--dump-tokens` is
-requested, and `ast` is present only when `--dump-ast` is requested.
+requested. `ast`, `scopes`, `tags`, and `typedefs` are present only when
+`--dump-ast` is requested.
 
 Token entries contain lexical information such as token kind, source lexeme,
 source file, line number, beginning-of-line state, and whitespace information.
@@ -333,7 +337,9 @@ AST output contains normalized type references through fields such as
 `ast.globals`, and statement/expression nodes are nested under each function's
 `body`. Declaration-like entries such as globals/functions and struct or union
 members may also include `headerComments` when a leading comment block is
-detected. For example:
+detected. `types[].tag` / `types[].tagToken` expose struct/union/enum tag
+names, and `typedefs[]` plus `tags[]` enumerate typedef and tag declarations by
+scope. For example:
 
 ```json
 {
@@ -510,6 +516,7 @@ variable or function parameter, and then start from its `typeId`.
     {
       "id": 1,
       "kind": "TY_STRUCT",
+      "tag": "Point",
       "members": [
         {
           "name": "x",
@@ -577,6 +584,10 @@ The following minimal example reads that JSON and emits TypeScript bindings such
 as `type Point = { ... }`.
 Because `typeId` is a reference ID rather than an array index, it is safest to
 build a `Map` first.
+You can now also use `types[].tag` and `typedefs[]`, so a type name or typedef
+alias can be recovered even when no `ffi:type:...` comment is present.
+In the example below, comments are treated as optional extra FFI hints, while
+the JSON payload itself is the primary source of naming information.
 
 ```ts
 import { dumpJson } from 'chibicc-dumper';
@@ -594,9 +605,15 @@ interface DumpMember {
 interface DumpType {
   readonly id: number;
   readonly kind: string;
+  readonly tag?: string;
   readonly isUnsigned?: boolean;
   readonly baseTypeId?: number;
   readonly members?: readonly DumpMember[];
+}
+
+interface DumpTypedef {
+  readonly name: string;
+  readonly typeId: number;
 }
 
 interface DumpGlobal {
@@ -607,6 +624,7 @@ interface DumpGlobal {
 
 interface DumpResult {
   readonly types: readonly DumpType[];
+  readonly typedefs?: readonly DumpTypedef[];
   readonly ast?: {
     readonly globals: readonly DumpGlobal[];
   };
@@ -773,7 +791,14 @@ struct Point global_point;
     throw new Error('global_point not found.');
   }
 
+  const targetType = typeById.get(target.typeId);
+  if (!targetType) {
+    throw new Error(`Unknown target type: ${target.typeId}`);
+  }
+
   const aliasName =
+    targetType.tag ??
+    result.typedefs?.find((entry) => entry.typeId === target.typeId)?.name ??
     findFfiAnnotation(target.headerComments)?.replace(/^ffi:type:/, '') ??
     'GeneratedType';
 
@@ -809,6 +834,9 @@ The key implementation points in this example are:
 - Enumerate members from the `members` array of a `TY_STRUCT` or `TY_UNION`.
 - Determine each member type by resolving `member.typeId` in `types` and
   checking fields such as `kind`, `isUnsigned`, and `baseTypeId`.
+- Struct/union/enum tag names are available from `types[].tag`, and typedef
+  aliases are available from `typedefs[]`. Comments are optional extra hints,
+  not the only naming source.
 - If simple scalar coverage is enough, mapping `TY_INT` and `TY_SHORT` to
   `number`, and `TY_BOOL` to `boolean`, is already useful.
 - If you also want a value-side skeleton, you can reuse the same type walk to

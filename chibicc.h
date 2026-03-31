@@ -343,6 +343,7 @@ struct Type {
   // Declaration
   Token *name;
   Token *name_pos;
+  Token *tag;
 
   // Array
   int array_len;
@@ -378,6 +379,86 @@ struct Member {
   int bit_offset;
   int bit_width;
 };
+
+/**
+ * @brief Scope kinds captured during parsing for JSON metadata.
+ */
+typedef enum {
+  PARSED_SCOPE_TRANSLATION_UNIT,
+  PARSED_SCOPE_FUNCTION,
+  PARSED_SCOPE_BLOCK,
+} ParsedScopeKind;
+
+/**
+ * @brief One parsed scope entry used by the JSON dumper.
+ *
+ * @property id Stable scope identifier within one translation unit dump.
+ * @property parent_scope_id Parent scope identifier, or 0 for the root scope.
+ * @property kind Kind of scope that introduced the declaration namespace.
+ */
+typedef struct {
+  int id;
+  int parent_scope_id;
+  ParsedScopeKind kind;
+} ParsedScopeInfo;
+
+/**
+ * @brief One typedef declaration captured during parsing.
+ *
+ * @property name Typedef alias name.
+ * @property tok Alias token.
+ * @property ty Resolved aliased type.
+ * @property scope_id Scope identifier that owns this declaration.
+ */
+typedef struct {
+  char *name;
+  Token *tok;
+  Type *ty;
+  int scope_id;
+} ParsedTypedefInfo;
+
+/**
+ * @brief One struct/union/enum tag declaration captured during parsing.
+ *
+ * @property name Tag name.
+ * @property tok Tag token.
+ * @property ty Resolved tagged type.
+ * @property scope_id Scope identifier that owns this declaration.
+ * @property is_definition Whether this entry is a defining declaration.
+ */
+typedef struct {
+  char *name;
+  Token *tok;
+  Type *ty;
+  int scope_id;
+  bool is_definition;
+} ParsedTagInfo;
+
+/**
+ * @brief Parse-time metadata exposed to the JSON dumper.
+ *
+ * @property scopes Recorded scope hierarchy for this translation unit.
+ * @property scope_len Number of scope entries.
+ * @property typedefs Recorded typedef declarations.
+ * @property typedef_len Number of typedef entries.
+ * @property tags Recorded struct/union/enum tag declarations.
+ * @property tag_len Number of tag entries.
+ */
+typedef struct {
+  ParsedScopeInfo *scopes;
+  int scope_len;
+  ParsedTypedefInfo *typedefs;
+  int typedef_len;
+  ParsedTagInfo *tags;
+  int tag_len;
+} ParseMetadata;
+
+/**
+ * @brief Returns parse metadata for the most recently parsed translation unit.
+ *
+ * @returns Read-only parse metadata used by the JSON dumper.
+ */
+const ParseMetadata *get_parse_metadata(void);
 
 extern Type *ty_void;
 extern Type *ty_bool;

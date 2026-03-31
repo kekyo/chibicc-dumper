@@ -22,6 +22,9 @@ if (mode === 'tokens') {
   expect('types' in data, 'missing types');
   expect('tokens' in data, 'missing tokens');
   expect(!('ast' in data), 'unexpected ast');
+  expect(!('scopes' in data), 'unexpected scopes');
+  expect(!('tags' in data), 'unexpected tags');
+  expect(!('typedefs' in data), 'unexpected typedefs');
   expect(data.tokens[0]?.kind === 'TK_COMMENT', 'unexpected first token kind');
   expect(
     data.tokens[0]?.text === ' sample main',
@@ -41,6 +44,10 @@ if (mode === 'ast') {
   expect('types' in data, 'missing types');
   expect(!('tokens' in data), 'unexpected tokens');
   expect('ast' in data, 'missing ast');
+  expect('scopes' in data, 'missing scopes');
+  expect('tags' in data, 'missing tags');
+  expect('typedefs' in data, 'missing typedefs');
+  expect(data.scopes[0]?.kind === 'translation-unit', 'missing root scope');
 
   const globals = data.ast.globals ?? [];
   const mainFns = globals.filter(
@@ -65,6 +72,10 @@ if (mode === 'both') {
   expect('types' in data, 'missing types');
   expect('tokens' in data, 'missing tokens');
   expect('ast' in data, 'missing ast');
+  expect('scopes' in data, 'missing scopes');
+  expect('tags' in data, 'missing tags');
+  expect('typedefs' in data, 'missing typedefs');
+  expect(data.scopes[0]?.kind === 'translation-unit', 'missing root scope');
   expect((data.tokens ?? []).length >= 2, 'expected at least two tokens');
   expect(
     data.ast.globals.some((obj) => obj.headerComments?.length === 1),
