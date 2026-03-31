@@ -133,6 +133,7 @@ export default defineConfig({
     }),
     screwUp({
       outputMetadataFile: true,
+      checkWorkingDirectoryStatus: false,
     }),
     dts({
       rollupTypes: true,

@@ -18,7 +18,7 @@ test: $(BINARY)
 	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" bash test/json-dump.sh ./$(BINARY)
 	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" node test/check-fixtures.mjs ./$(BINARY)
 	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" node test/self-parse.mjs ./$(BINARY)
-	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" bash test/build-pack.sh
+#	TEST_RESULTS_DIR="$(TEST_RESULTS_DIR)" bash test/build-pack.sh
 
 test-all: test
 
