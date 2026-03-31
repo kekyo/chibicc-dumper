@@ -9,6 +9,9 @@ import {
   workspaceRoot,
 } from './runtime';
 import type { ResolvedFile } from './runtime';
+import type { ChibiccDumperDumpResult } from './types';
+
+export type * from './types';
 
 interface NormalizedOptions {
   readonly inputPath: string;
@@ -225,6 +228,6 @@ export const dumpJson = async (
  * @param options One-shot execution options.
  * @returns Parsed JSON payload.
  */
-export const dump = async <T = unknown>(
+export const dump = async <T = ChibiccDumperDumpResult>(
   options: ChibiccDumperRunOptions
 ): Promise<T> => JSON.parse(await dumpJson(options)) as T;

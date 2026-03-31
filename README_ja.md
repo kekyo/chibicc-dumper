@@ -202,10 +202,14 @@ chibicc-dumper --dump-tokens --dump-ast -o sample.full.json sample.c
 そのため、実行時に外部の `.wasm` ファイルを取得する必要はありません。
 各 API 呼び出しは新しい WASM インスタンスを作成し、`chibicc-dumper` を実行し、結果を回収した直後にそのインスタンスを破棄します。
 
-生の JSON テキストが欲しい場合は `dumpJson()` を、パース済みの JavaScript オブジェクトが欲しい場合は `dump()` を使ってください。
+生の JSON テキストが欲しい場合は `dumpJson()` を、パース済みの JavaScript オブジェクトが欲しい場合は `dump()` を使ってください。`dump()` は既定で型付きの `ChibiccDumperDumpResult` を返すため、`isFunction` や `kind` で絞り込めます。
 
 ```ts
-import { dump, dumpJson } from 'chibicc-dumper';
+import {
+  dump,
+  dumpJson,
+  type ChibiccDumperFunctionObject,
+} from 'chibicc-dumper';
 
 const json = await dumpJson({
   inputPath: 'main.c',
@@ -217,28 +221,47 @@ const result = await dump({
   source: 'int main(void) { return 0; }\n',
 });
 
+if (result.ast) {
+  const main = result.ast.globals.find(
+    (global): global is ChibiccDumperFunctionObject =>
+      global.isFunction && global.name === 'main'
+  );
+  const firstStatement = main?.body.body[0];
+
+  if (
+    firstStatement?.kind === 'ND_RETURN' &&
+    firstStatement.lhs?.kind === 'ND_NUM'
+  ) {
+    console.log(firstStatement.lhs.value);
+  }
+}
+
 console.log(json);
-console.log(result.ast.kind);
 ```
 
 `chibicc` に同梱されている組み込みヘッダは自動的に利用できるため、`#include <stddef.h>` のような標準ヘッダも追加設定なしで動作します。
 
 ```ts
-import { dump } from 'chibicc-dumper';
+import { dump, type ChibiccDumperVariableObject } from 'chibicc-dumper';
 
 const result = await dump({
   inputPath: 'main.c',
   source: '#include <stddef.h>\nsize_t value;\n',
 });
 
-console.log(result.tokens[0].kind);
+const global = result.ast?.globals.find(
+  (entry): entry is ChibiccDumperVariableObject => !entry.isFunction
+);
+
+console.log(global?.name);
+console.log(global?.typeId);
 ```
 
 プロジェクト固有のファイルは、`files` オプションまたは同期ホストコールバック経由で渡せます。
 仮想パスは `/workspace` 配下に正規化されるため、`main.c` からの `#include "foo.h"` は `/workspace/foo.h` に解決されます。
 
 ```ts
-import { dump } from 'chibicc-dumper';
+import { dump, type ChibiccDumperFunctionObject } from 'chibicc-dumper';
 
 const result = await dump({
   inputPath: 'main.c',
@@ -253,7 +276,18 @@ const result = await dump({
   },
 });
 
-console.log(result.ast.globals[0].body.body[0].lhs.val);
+const main = result.ast?.globals.find(
+  (global): global is ChibiccDumperFunctionObject =>
+    global.isFunction && global.name === 'main'
+);
+const firstStatement = main?.body.body[0];
+
+if (
+  firstStatement?.kind === 'ND_RETURN' &&
+  firstStatement.lhs?.kind === 'ND_NUM'
+) {
+  console.log(firstStatement.lhs.value);
+}
 ```
 
 主なオプションは次のとおりです。
@@ -281,11 +315,14 @@ console.log(result.ast.globals[0].body.body[0].lhs.val);
   "ast": {
     "kind": "program",
     "globals": [...]
-  }
+  },
+  "scopes": [...],
+  "tags": [...],
+  "typedefs": [...]
 }
 ```
 
-`types` は常に存在します。`tokens` は `--dump-tokens` を指定した場合のみ、`ast` は `--dump-ast` を指定した場合のみ存在します。
+`types` は常に存在します。`tokens` は `--dump-tokens` を指定した場合のみ存在します。`ast`、`scopes`、`tags`、`typedefs` は `--dump-ast` を指定した場合のみ存在します。
 
 トークン要素には、トークン種別、ソース上の字句、ソースファイル、行番号、行頭かどうか、空白情報といった字句情報が含まれます。
 コメントトークン (`TK_COMMENT`) には、追加で `commentStyle`、`endLine`、コメント本文の `text` も含まれます。
@@ -318,6 +355,7 @@ console.log(result.ast.globals[0].body.body[0].lhs.val);
 AST 出力には、`typeId`、`baseTypeId`、`returnTypeId` などのフィールドを通じた正規化済み型参照が含まれます。
 関数定義は `ast.globals` 配下に現れ、文や式のノードは各関数の `body` の下に入れ子で格納されます。
 先行するコメントブロックが検出された場合、global/function や struct/union member には `headerComments` も付与されます。
+また、`types[].tag` / `types[].tagToken` から struct/union/enum の tag 名を取得でき、`typedefs[]` と `tags[]` から typedef 宣言や tag 宣言を scope 単位で列挙できます。
 例:
 
 ```json
@@ -490,6 +528,7 @@ struct Point global_point;
     {
       "id": 1,
       "kind": "TY_STRUCT",
+      "tag": "Point",
       "members": [
         {
           "name": "x",
@@ -555,6 +594,8 @@ struct Point global_point;
 
 上の JSON を読み取り、`type Point = { ... }` のような TypeScript の型式を出力する最小例は次のようになります。
 `typeId` は `types` 配列の添字ではなく参照 ID なので、最初に `Map` を作って引けるようにしておくのが安全です。
+現在は `types[].tag` や `typedefs[]` も使えるため、`ffi:type:...` のようなコメントがなくても型名や typedef 名を復元できます。
+以下の例では、コメントは追加の FFI ヒントとして使い、型名の決定はまず JSON 本体の情報を優先しています。
 
 ```ts
 import { dumpJson } from 'chibicc-dumper';
@@ -572,9 +613,15 @@ interface DumpMember {
 interface DumpType {
   readonly id: number;
   readonly kind: string;
+  readonly tag?: string;
   readonly isUnsigned?: boolean;
   readonly baseTypeId?: number;
   readonly members?: readonly DumpMember[];
+}
+
+interface DumpTypedef {
+  readonly name: string;
+  readonly typeId: number;
 }
 
 interface DumpGlobal {
@@ -585,6 +632,7 @@ interface DumpGlobal {
 
 interface DumpResult {
   readonly types: readonly DumpType[];
+  readonly typedefs?: readonly DumpTypedef[];
   readonly ast?: {
     readonly globals: readonly DumpGlobal[];
   };
@@ -751,7 +799,14 @@ struct Point global_point;
     throw new Error('global_point not found.');
   }
 
+  const targetType = typeById.get(target.typeId);
+  if (!targetType) {
+    throw new Error(`Unknown target type: ${target.typeId}`);
+  }
+
   const aliasName =
+    targetType.tag ??
+    result.typedefs?.find((entry) => entry.typeId === target.typeId)?.name ??
     findFfiAnnotation(target.headerComments)?.replace(/^ffi:type:/, '') ??
     'GeneratedType';
 
@@ -785,6 +840,7 @@ const global_point: Point = {
 - 構造体の特定は、まず `ast.globals` などの宣言ノードから `typeId` を取り、その ID で `types` を引く
 - 構造体のメンバー列挙は `TY_STRUCT` または `TY_UNION` の `members` 配列を読む
 - 各メンバーの型判定は `member.typeId` から `types` を引き、`kind`、`isUnsigned`、`baseTypeId` などを見る
+- struct/union/enum の tag 名は `types[].tag` から、typedef 名は `typedefs[]` から取得できる。コメントは必須ではなく、追加ヒントとして使える
 - 単純型だけでよければ `TY_INT` や `TY_SHORT` をまとめて `number` に落とし、`TY_BOOL` を `boolean` にするだけでも十分に使える
 - 値側のスケルトンも欲しいなら、同じ型走査を使って `0`、`false`、`[]`、`{ ... }` のような既定値を組み立てれば `const global_point: Point = { ... }` まで自動生成できる
 - ネストした構造体は `TY_STRUCT` / `TY_UNION` を再帰的に辿ればよい。別名の `type` を起こしたいなら、再帰時に別途名前付け規則を持たせる
@@ -800,4 +856,4 @@ Under MIT.
 
 ## オリジナルのchibiccについて
 
-[chibiccの元のREADMEを参照してください](./README_chibicc.md)
+[chibiccの元のREADMEを参照してください](./chibicc/README_chibicc.md)
