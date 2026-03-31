@@ -156,5 +156,8 @@ export default defineConfig({
     sourcemap: true,
     minify: false,
     emptyOutDir: false,
+    rollupOptions: {
+      external: [/^node:/],
+    },
   },
 });

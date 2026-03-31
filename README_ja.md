@@ -202,10 +202,14 @@ chibicc-dumper --dump-tokens --dump-ast -o sample.full.json sample.c
 そのため、実行時に外部の `.wasm` ファイルを取得する必要はありません。
 各 API 呼び出しは新しい WASM インスタンスを作成し、`chibicc-dumper` を実行し、結果を回収した直後にそのインスタンスを破棄します。
 
-生の JSON テキストが欲しい場合は `dumpJson()` を、パース済みの JavaScript オブジェクトが欲しい場合は `dump()` を使ってください。
+生の JSON テキストが欲しい場合は `dumpJson()` を、パース済みの JavaScript オブジェクトが欲しい場合は `dump()` を使ってください。`dump()` は既定で型付きの `ChibiccDumperDumpResult` を返すため、`isFunction` や `kind` で絞り込めます。
 
 ```ts
-import { dump, dumpJson } from 'chibicc-dumper';
+import {
+  dump,
+  dumpJson,
+  type ChibiccDumperFunctionObject,
+} from 'chibicc-dumper';
 
 const json = await dumpJson({
   inputPath: 'main.c',
@@ -217,28 +221,47 @@ const result = await dump({
   source: 'int main(void) { return 0; }\n',
 });
 
+if (result.ast) {
+  const main = result.ast.globals.find(
+    (global): global is ChibiccDumperFunctionObject =>
+      global.isFunction && global.name === 'main'
+  );
+  const firstStatement = main?.body.body[0];
+
+  if (
+    firstStatement?.kind === 'ND_RETURN' &&
+    firstStatement.lhs?.kind === 'ND_NUM'
+  ) {
+    console.log(firstStatement.lhs.value);
+  }
+}
+
 console.log(json);
-console.log(result.ast.kind);
 ```
 
 `chibicc` に同梱されている組み込みヘッダは自動的に利用できるため、`#include <stddef.h>` のような標準ヘッダも追加設定なしで動作します。
 
 ```ts
-import { dump } from 'chibicc-dumper';
+import { dump, type ChibiccDumperVariableObject } from 'chibicc-dumper';
 
 const result = await dump({
   inputPath: 'main.c',
   source: '#include <stddef.h>\nsize_t value;\n',
 });
 
-console.log(result.tokens[0].kind);
+const global = result.ast?.globals.find(
+  (entry): entry is ChibiccDumperVariableObject => !entry.isFunction
+);
+
+console.log(global?.name);
+console.log(global?.typeId);
 ```
 
 プロジェクト固有のファイルは、`files` オプションまたは同期ホストコールバック経由で渡せます。
 仮想パスは `/workspace` 配下に正規化されるため、`main.c` からの `#include "foo.h"` は `/workspace/foo.h` に解決されます。
 
 ```ts
-import { dump } from 'chibicc-dumper';
+import { dump, type ChibiccDumperFunctionObject } from 'chibicc-dumper';
 
 const result = await dump({
   inputPath: 'main.c',
@@ -253,7 +276,18 @@ const result = await dump({
   },
 });
 
-console.log(result.ast.globals[0].body.body[0].lhs.val);
+const main = result.ast?.globals.find(
+  (global): global is ChibiccDumperFunctionObject =>
+    global.isFunction && global.name === 'main'
+);
+const firstStatement = main?.body.body[0];
+
+if (
+  firstStatement?.kind === 'ND_RETURN' &&
+  firstStatement.lhs?.kind === 'ND_NUM'
+) {
+  console.log(firstStatement.lhs.value);
+}
 ```
 
 主なオプションは次のとおりです。

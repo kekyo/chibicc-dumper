@@ -209,10 +209,16 @@ creates a fresh WASM instance, runs `chibicc-dumper`, and disposes that
 instance immediately after collecting the result.
 
 Use `dumpJson()` when you want the raw JSON text, or `dump()` when you want the
-parsed JavaScript object.
+parsed JavaScript object. `dump()` returns the typed
+`ChibiccDumperDumpResult` shape by default, so you can narrow on
+`isFunction` and `kind`.
 
 ```ts
-import { dump, dumpJson } from 'chibicc-dumper';
+import {
+  dump,
+  dumpJson,
+  type ChibiccDumperFunctionObject,
+} from 'chibicc-dumper';
 
 const json = await dumpJson({
   inputPath: 'main.c',
@@ -224,22 +230,41 @@ const result = await dump({
   source: 'int main(void) { return 0; }\n',
 });
 
+if (result.ast) {
+  const main = result.ast.globals.find(
+    (global): global is ChibiccDumperFunctionObject =>
+      global.isFunction && global.name === 'main'
+  );
+  const firstStatement = main?.body.body[0];
+
+  if (
+    firstStatement?.kind === 'ND_RETURN' &&
+    firstStatement.lhs?.kind === 'ND_NUM'
+  ) {
+    console.log(firstStatement.lhs.value);
+  }
+}
+
 console.log(json);
-console.log(result.ast.kind);
 ```
 
 Builtin headers bundled with `chibicc` are available automatically, so standard
 includes such as `#include <stddef.h>` work without extra setup.
 
 ```ts
-import { dump } from 'chibicc-dumper';
+import { dump, type ChibiccDumperVariableObject } from 'chibicc-dumper';
 
 const result = await dump({
   inputPath: 'main.c',
   source: '#include <stddef.h>\nsize_t value;\n',
 });
 
-console.log(result.tokens[0].kind);
+const global = result.ast?.globals.find(
+  (entry): entry is ChibiccDumperVariableObject => !entry.isFunction
+);
+
+console.log(global?.name);
+console.log(global?.typeId);
 ```
 
 Project-specific files can be provided through the `files` option or through
@@ -247,7 +272,7 @@ synchronous host callbacks. Virtual paths are normalized under `/workspace`, so
 `#include "foo.h"` from `main.c` resolves to `/workspace/foo.h`.
 
 ```ts
-import { dump } from 'chibicc-dumper';
+import { dump, type ChibiccDumperFunctionObject } from 'chibicc-dumper';
 
 const result = await dump({
   inputPath: 'main.c',
@@ -262,7 +287,18 @@ const result = await dump({
   },
 });
 
-console.log(result.ast.globals[0].body.body[0].lhs.val);
+const main = result.ast?.globals.find(
+  (global): global is ChibiccDumperFunctionObject =>
+    global.isFunction && global.name === 'main'
+);
+const firstStatement = main?.body.body[0];
+
+if (
+  firstStatement?.kind === 'ND_RETURN' &&
+  firstStatement.lhs?.kind === 'ND_NUM'
+) {
+  console.log(firstStatement.lhs.value);
+}
 ```
 
 The main options are:
