@@ -55,7 +55,7 @@ const listSources = (dirpath) =>
     )
     .sort();
 
-const repoSources = listSources(ROOT);
+const repoSources = listSources(path.join(ROOT, 'chibicc'));
 const testSources = listSources(path.join(ROOT, 'test'));
 const extraSources = ['test/common'];
 

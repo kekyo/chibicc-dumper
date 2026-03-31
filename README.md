@@ -862,4 +862,4 @@ Under MIT.
 
 ## About original chibicc
 
-[Read the original README for chibicc](./README_chibicc.md).
+[Read the original README for chibicc](./chibicc/README_chibicc.md).

@@ -3,13 +3,13 @@ TEST_RESULTS_STAMP:=$(shell date +%Y%m%d_%H%M%S_%3N)
 TEST_RESULTS_DIR:=$(CURDIR)/test_results/$(TEST_RESULTS_STAMP)
 BINARY=chibicc-dumper
 
-SRCS=$(wildcard *.c)
+SRCS=$(wildcard chibicc/*.c)
 OBJS=$(SRCS:.c=.o)
 
 $(BINARY): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(OBJS): chibicc.h
+$(OBJS): chibicc/chibicc.h chibicc/driver.h
 
 test: $(BINARY)
 	mkdir -p "$(TEST_RESULTS_DIR)"
@@ -23,7 +23,7 @@ test: $(BINARY)
 test-all: test
 
 clean:
-	rm -rf $(BINARY) artifacts chibicc stage2 test/*.exe test/*.o test/*.s
+	rm -rf $(BINARY) artifacts stage2 test/*.exe test/*.o test/*.s
 	find * -type f '(' -name '*~' -o -name '*.o' ')' -exec rm {} ';'
 
 .PHONY: test test-all clean

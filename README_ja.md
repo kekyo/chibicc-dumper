@@ -822,4 +822,4 @@ Under MIT.
 
 ## オリジナルのchibiccについて
 
-[chibiccの元のREADMEを参照してください](./README_chibicc.md)
+[chibiccの元のREADMEを参照してください](./chibicc/README_chibicc.md)
